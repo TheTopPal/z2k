@@ -167,15 +167,15 @@ _rule() {
         }
     ' "$1"
 }
-_viol=""
-for _f in $(find "$ROOT/files" "$ROOT/lib" "$ROOT/webpanel" -type f \
-            \( -name '*.sh' -o -name 'S*' -o -name '*.new' \) 2>/dev/null); do
+# Список и обход разделены намеренно: `for f in $(find …)` роняет shellcheck
+# правилом SC2044, и оно право — разбор вывода find подстановкой хрупок. Тот же
+# приём в tests/test_portability_traps.sh: находим, потом читаем построчно.
+_files=$(find "$ROOT/files" "$ROOT/lib" "$ROOT/webpanel" -type f \
+         \( -name '*.sh' -o -name 'S*' -o -name '*.new' \) 2>/dev/null)
+_viol=$(printf '%s\n' "$_files" | while IFS= read -r _f; do
     [ -f "$_f" ] || continue
-    _hit=$(_rule "$_f")
-    [ -n "$_hit" ] && _viol="$_viol$_hit
-"
-done
-_viol=$(printf '%s' "$_viol" | sed '/^$/d' | sed "s|$ROOT/||")
+    _rule "$_f"
+done | sed '/^$/d' | sed "s|$ROOT/||")
 if [ -z "$_viol" ]; then
     ok "в боевом коде время файла берётся через date -r раньше stat"
 else
