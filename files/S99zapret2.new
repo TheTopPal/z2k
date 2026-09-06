@@ -2483,12 +2483,18 @@ _z2k_scheduler_sync()
     # проба ждала бы ночного слота. Ровно это и вышло с p-81.9: починку пробы
     # выпустили, а запустить её было некому.
     #
-    # busybox понимает -c %Y, BSD (стенд разработки) — только -f %m. Второй
-    # вариант не для роутера: без него функцию нельзя прогнать тестом нигде,
-    # кроме самого роутера, а именно так этот дефект и доехал до людей.
-    _want=$(stat -c %Y "$_sch" 2>/dev/null || stat -f %m "$_sch" 2>/dev/null)
+    # busybox на Entware не знает у stat ни -c, ни -f, поэтому первым идёт
+    # `date -r ФАЙЛ +%s`. Здесь стоял голый stat, и выражение всегда отдавало
+    # пусто: перезапуск не случался ни разу (роутер 06.09.2026). Подробности —
+    # у второй копии приёма, _z2k_mtime в z2k-scheduler.sh.
+    _z2k_sched_mtime() {
+        date -r "$1" +%s 2>/dev/null \
+            || stat -c %Y "$1" 2>/dev/null \
+            || stat -f %m "$1" 2>/dev/null
+    }
+    _want=$(_z2k_sched_mtime "$_sch")
     if [ -f "$_sch_probe" ]; then
-        _wp=$(stat -c %Y "$_sch_probe" 2>/dev/null || stat -f %m "$_sch_probe" 2>/dev/null)
+        _wp=$(_z2k_sched_mtime "$_sch_probe")
         [ -n "$_wp" ] && [ "$_wp" -gt "${_want:-0}" ] 2>/dev/null && _want="$_wp"
     fi
     if [ -z "$_want" ]; then

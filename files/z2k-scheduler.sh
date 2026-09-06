@@ -162,9 +162,18 @@ run_task() {
     ( "$@" >> "$LOG" 2>&1; log "done $label (exit $?)" ) &
 }
 
-# Время файла: busybox stat поддерживает -c %Y; если его нет — молчим и
-# считаем, что перезапускаться не по чему.
-_z2k_mtime() { stat -c %Y "$1" 2>/dev/null || echo ""; }
+# Время файла. busybox на Entware не знает у stat ни -c, ни -f — /opt/bin/stat
+# это тоже busybox, дело не в PATH (1.37.0, роутер 06.09.2026). `date -r ФАЙЛ
+# +%s` он знает: так панель считает mtime с r-22 (file_mtime в actions.sh).
+# На BSD `date -r` ждёт секунды, а не файл, поэтому стенд уходит на stat.
+# Пусто — «сравнивать не с чем», перезапуска не будет.
+# Разбор: tests/test_scheduler_mtime_busybox.sh
+_z2k_mtime() {
+    date -r "$1" +%s 2>/dev/null \
+        || stat -c %Y "$1" 2>/dev/null \
+        || stat -f %m "$1" 2>/dev/null \
+        || echo ""
+}
 
 log "scheduler started (pid $$, $(uname -srm))"
 
