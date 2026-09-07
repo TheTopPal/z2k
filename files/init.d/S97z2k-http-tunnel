@@ -42,12 +42,13 @@ CIDRS="168.119.95.238/32"
 ipt() { iptables -w "$@" 2>/dev/null || iptables "$@" 2>/dev/null; }
 
 start() {
+    # ПУСТЫШКА С 07.09.2026. Порт :1444 обслуживает тот же процесс, что и :1443,
+    # его поднимает S98tg-tunnel. Здесь ничего не запускается намеренно: второй
+    # процесс на том же бинарнике давал только вторую сессию к релею и второго
+    # надзирателя без сторожа. Файл оставлен, потому что на него ссылаются
+    # установщик, апдейтер, панель и сторож, — и потому что его `stop` нужен
+    # для перехода: он добивает прежний экземпляр, оставшийся в памяти.
     [ -x "$BIN" ] || exit 0
-    # Уважать TG_PROXY_USER_DISABLED так же, как S98tg-tunnel. Оба туннеля —
-    # один бинарник и одна пользовательская сущность («туннель»), поэтому
-    # выключатель Telegram гасит и cdnbase: держать один без другого незачем
-    # (решение владельца 2026-08-06). Без этой проверки cdnbase воскресал бы
-    # на каждом ребуте вопреки явно выключенному туннелю.
     if [ -f "/opt/zapret2/config" ]; then
         user_disabled=$(awk -F= '/^TG_PROXY_USER_DISABLED=/ {gsub(/[" ]/,"",$2); print $2; exit}' /opt/zapret2/config)
         if [ "$user_disabled" = "1" ]; then
@@ -55,112 +56,44 @@ start() {
             return 0
         fi
     fi
-    if [ -f "$PIDFILE" ] && kill -0 "$(cat $PIDFILE 2>/dev/null)" 2>/dev/null; then
-        echo "z2k-http-tunnel already running (pid $(cat $PIDFILE))"
-        return 0
-    fi
-    echo "Starting z2k-http-tunnel supervisor on :$LISTEN_PORT..."
-    # SUPERVISOR loop (s6/runit pattern in shell — Entware has no systemd/procd).
-    # The pidfile holds the SUPERVISOR, which is the PARENT of the daemon and
-    # respawns it on exit with capped backoff. This replaces the old
-    # fire-and-forget `exec &` that left the daemon orphaned with no respawn
-    # (field 2026-05-30: daemon died on transient relay EOF and stayed dead,
-    # blackholing the redirected destination until a manual restart).
-    #   trap '' HUP   — preserves the MIPS busybox SIGHUP fix: the daemon child
-    #                   inherits the ignored-HUP disposition (Go terminates on
-    #                   HUP by default; busybox posts HUP to bg children when the
-    #                   init.d wrapper exits). </dev/null = no controlling tty.
-    #   trap TERM/INT — `stop` kills the supervisor; the trap kills the daemon
-    #                   child so it does not outlive the supervisor.
-    #   backoff resets to 1s after a healthy run (>=60s uptime); otherwise grows
-    #                   to a 30s cap so a hard-down relay is not hammered.
-    (
-        trap '' HUP
-        trap 'kill "$child" 2>/dev/null; exit 0' TERM INT
-        backoff=1
-        while :; do
-            t0=$(date +%s 2>/dev/null || echo 0)
-            # GODEBUG=asyncpreemptoff=1: same MIPS async-preempt crash guard as
-            # S98tg-tunnel (identical Go binary). See that script for the rationale.
-            GODEBUG=asyncpreemptoff=1 $BIN --listen=:$LISTEN_PORT --timeout=15m </dev/null >> "$LOG" 2>&1 &
-            child=$!
-            wait "$child"
-            t1=$(date +%s 2>/dev/null || echo 0)
-            if [ $((t1 - t0)) -ge 60 ]; then
-                backoff=1
-            else
-                backoff=$((backoff * 2)); [ "$backoff" -gt 30 ] && backoff=30
-            fi
-            echo "$(date 2>/dev/null) [supervisor] daemon exited, respawn in ${backoff}s" >> "$LOG"
-            sleep "$backoff"
-        done
-    # ВАЖНО: подоболочка отвязывается от потоков init-скрипта явно.
-    #
-    # NDM запускает /opt/etc/init.d/* по очереди и ЧИТАЕТ вывод каждого до конца
-    # потока — именно так его строки попадают в системный журнал. Фоновый
-    # надзиратель наследует этот поток и держит его открытым всё время жизни, то
-    # есть конца не наступает никогда: NDM ждёт и к следующему скрипту не
-    # переходит.
-    #
-    # Замер на роутере: с голым `) &` читатель висит бесконечно, с явным
-    # отвязыванием поток закрывается за секунду.
-    #
-    # Цена этой строки — вся загрузка. У человека из отчёта 2026-08-05 цепочка
-    # встала на S96z2k-rt-proxy, и веб-панель, http-туннель, планировщик и сам
-    # zapret2 не поднялись вовсе: он ждал двадцать минут и запускал их руками.
-    # S51z2k-warp делал это правильно с самого начала, остальные четыре — нет.
-    ) >/dev/null 2>&1 </dev/null &
-    echo $! > "$PIDFILE"
-    sleep 2
-    for cidr in $CIDRS; do
-        ipt -t nat -C PREROUTING -d "$cidr" -p tcp --dport 80 -j REDIRECT --to-port $LISTEN_PORT || \
-            ipt -t nat -I PREROUTING 1 -d "$cidr" -p tcp --dport 80 -j REDIRECT --to-port $LISTEN_PORT
-        ipt -t nat -C OUTPUT -d "$cidr" -p tcp --dport 80 -j REDIRECT --to-port $LISTEN_PORT || \
-            ipt -t nat -I OUTPUT 1 -d "$cidr" -p tcp --dport 80 -j REDIRECT --to-port $LISTEN_PORT
-    done
-    for cidr in $CIDRS; do
-        conntrack -D -d "${cidr%/*}" 2>/dev/null || true
-    done
+    echo "z2k-http-tunnel: порт :$LISTEN_PORT обслуживает S98tg-tunnel, отдельный процесс не нужен"
+    return 0
 }
 
 stop() {
-    echo "Stopping z2k-http-tunnel..."
+    echo "Stopping z2k-http-tunnel (legacy)..."
+    # Прежний надзиратель — по pidfile, а если pidfile потерян — по cmdline и
+    # ppid=1: сирота переживала stop и поднимала демон обратно.
     if [ -f "$PIDFILE" ]; then
         pid=$(cat "$PIDFILE" 2>/dev/null)
-        # Kill by pid (not killall) — S98tg-tunnel runs the same binary
-        # on :1443 and we must not knock it out.
         [ -n "$pid" ] && kill "$pid" 2>/dev/null
         rm -f "$PIDFILE"
     fi
-    # ОБЯЗАТЕЛЬНО добить сам демон, а не только супервизора. В pidfile лежит
-    # PID СУПЕРВИЗОРА (подоболочка с respawn-циклом), и его смерть НЕ убивает
-    # ребёнка — тот осиротевает и живёт дальше, держа ~8 МБ и порт :1444.
-    # Именно это наблюдали как «выключил туннель, а он остался в памяти и жрёт
-    # оперативку» (полевой отчёт 2026-08-06); воспроизведено в песочнице на
-    # роутере до правки и проверено после. У S98tg-tunnel такой добой был с
-    # самого начала, у S97 — нет.
-    # Матчим по cmdline, а не killall: тот же бинарник обслуживает :1443.
+    for _pd in /proc/[0-9]*; do
+        p="${_pd#/proc/}"
+        [ "$p" = "$$" ] && continue
+        [ -r "$_pd/cmdline" ] || continue
+        tr '\0' ' ' < "$_pd/cmdline" 2>/dev/null | grep -q "S97z2k-http-tunnel" || continue
+        [ "$(awk '/^PPid:/{print $2}' "$_pd/status" 2>/dev/null)" = "1" ] || continue
+        kill "$p" 2>/dev/null
+    done
+    # Демон только с нашим портом — это ПРЕЖНИЙ отдельный процесс. Новый
+    # слушает и :1443, и его трогать нельзя: он принадлежит S98.
     if pidof tg-mtproxy-client >/dev/null 2>&1; then
         for p in $(pidof tg-mtproxy-client); do
             if [ -r "/proc/$p/cmdline" ] && \
-               tr '\0' ' ' < "/proc/$p/cmdline" | grep -q -- "--listen=:$LISTEN_PORT"; then
+               tr '\0' ' ' < "/proc/$p/cmdline" | grep -q -- "--listen=:$LISTEN_PORT" && \
+               ! tr '\0' ' ' < "/proc/$p/cmdline" | grep -q -- "--listen=:1443"; then
                 kill "$p" 2>/dev/null
             fi
         done
     fi
-    for cidr in $CIDRS; do
-        while ipt -t nat -C PREROUTING -d "$cidr" -p tcp --dport 80 -j REDIRECT --to-port $LISTEN_PORT; do
-            ipt -t nat -D PREROUTING -d "$cidr" -p tcp --dport 80 -j REDIRECT --to-port $LISTEN_PORT || break
-        done
-        while ipt -t nat -C OUTPUT -d "$cidr" -p tcp --dport 80 -j REDIRECT --to-port $LISTEN_PORT; do
-            ipt -t nat -D OUTPUT -d "$cidr" -p tcp --dport 80 -j REDIRECT --to-port $LISTEN_PORT || break
-        done
-    done
+    # Правила редиректа теперь принадлежат S98 — здесь их не трогаем.
 }
 
 case "$1" in
-    start)   start ;;
-    stop)    stop ;;
-    restart) stop; sleep 1; start ;;
+    start) start ;;
+    stop) stop ;;
+    restart) stop ;;
     *) echo "Usage: $0 {start|stop|restart}" ;;
 esac

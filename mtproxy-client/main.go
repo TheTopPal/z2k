@@ -24,7 +24,7 @@ var defaultTunnelSecret = ""
 var buildVersion = "dev"
 
 var (
-	listenAddr   = flag.String("listen", ":1443", "Local listen address")
+	listenAddrs  listenList
 	tunnelURL    = flag.String("tunnel-url", "wss://213.176.74.63.nip.io/ws", "Tunnel relay WebSocket URL")
 	tunnelSecret = flag.String("tunnel-secret", defaultTunnelSecret, "Shared secret for tunnel auth (build-injected; override with --tunnel-secret)")
 	verbose      = flag.Bool("v", false, "Verbose logging")
@@ -55,6 +55,10 @@ func (w *wsWriter) WriteMessage(messageType int, data []byte) error {
 // по «read timeout» ни за что.
 func (w *wsWriter) WriteControl(messageType int, data []byte, deadline time.Time) error {
 	return w.ws.WriteControl(messageType, data, deadline)
+}
+
+func init() {
+	flag.Var(&listenAddrs, "listen", "Local listen address; repeatable or comma-separated (default :1443)")
 }
 
 func main() {

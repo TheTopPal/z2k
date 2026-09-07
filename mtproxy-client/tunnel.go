@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -884,7 +885,7 @@ func (tc *tunnelClient) handleTunnelConn(clientConn *net.TCPConn) {
 	// круглосуточно (замер 26.08.2026 — ~16 000 отказов в сутки, больше, чем
 	// все прочие источники релея вместе). Отказ на своей стороне обрывает
 	// петлю в её начале и не тратит ни канал, ни чужой процессор.
-	if isSelfDial(origIP, origPort, listenPortOf(*listenAddr)) {
+	if isSelfDialAny(origIP, origPort, listenPorts) {
 		if *verbose {
 			log.Printf("[tunnel] самонабор на %s:%d — соединение пришло на слушатель напрямую, не через redirect", origIP, origPort)
 		}
@@ -984,12 +985,31 @@ func runTunnel() error {
 
 	connSemaphore = make(chan struct{}, *maxConns)
 
-	ln, err := net.Listen("tcp", *listenAddr)
-	if err != nil {
-		return fmt.Errorf("listen %s: %w", *listenAddr, err)
+	// Все слушатели биндим ДО чего-либо ещё, и любой отказ — отказ целиком.
+	// Полусерввис (1443 слушает, 1444 нет) хуже честного падения: надзиратель
+	// перезапустит процесс, а вот половину портов никто не заметит.
+	addrs := listenAddrs.addrs()
+	// Порты слушателей — для отсечения самонабора: при двух портах петля
+	// возможна на любом из них, проверять только первый было бы дырой.
+	listenPorts = make(map[int]bool, len(addrs))
+	for _, a := range addrs {
+		if p := listenPortOf(a); p != 0 {
+			listenPorts[p] = true
+		}
+	}
+	lns := make([]net.Listener, 0, len(addrs))
+	for _, a := range addrs {
+		ln, err := net.Listen("tcp", a)
+		if err != nil {
+			for _, o := range lns {
+				o.Close()
+			}
+			return fmt.Errorf("listen %s: %w", a, err)
+		}
+		lns = append(lns, ln)
 	}
 
-	log.Printf("[tunnel] listening on %s, relay=%s", *listenAddr, *tunnelURL)
+	log.Printf("[tunnel] listening on %s, relay=%s", strings.Join(addrs, " "), *tunnelURL)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -1051,8 +1071,36 @@ func runTunnel() error {
 		<-ctx.Done()
 		log.Println("[tunnel] shutting down...")
 		tc.cancel()
-		ln.Close()
+		for _, ln := range lns {
+			ln.Close()
+		}
 	}()
+
+	// По accept-циклу на слушатель, все — в один и тот же клиент туннеля.
+	// Возвращаемся, когда закончились все: ошибка любого — ошибка процесса,
+	// надзиратель поднимет заново.
+	var wg sync.WaitGroup
+	errs := make(chan error, len(lns))
+	for _, ln := range lns {
+		wg.Add(1)
+		go func(ln net.Listener) {
+			defer wg.Done()
+			errs <- tc.acceptLoop(ctx, ln)
+		}(ln)
+	}
+	wg.Wait()
+	close(errs)
+	for e := range errs {
+		if e != nil {
+			return e
+		}
+	}
+	return nil
+}
+
+// acceptLoop обслуживает один слушатель. Логика та же, что жила в runTunnel,
+// когда слушатель был один; вынесена, чтобы гоняться по каждому порту.
+func (tc *tunnelClient) acceptLoop(ctx context.Context, ln net.Listener) error {
 
 	// Бэкофф для временных ошибок Accept. Голый `continue` здесь означал
 	// 100% CPU навсегда: при EMFILE (кончились дескрипторы) или после того,

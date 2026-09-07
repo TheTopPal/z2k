@@ -47,6 +47,32 @@ PIDFILE="/var/run/tg-tunnel.pid"
 # каждом круге сверяет его со своим и уходит, если поколение сменилось. Так
 # лишний надзиратель умирает сам, не дожидаясь перезагрузки.
 GENFILE="/var/run/tg-tunnel.gen"
+# cdnbase: :80 к этому адресу заворачивается на второй порт того же процесса.
+# Правила переехали сюда из S97z2k-http-tunnel вместе с самим портом.
+CDN_PORT="1444"
+CDN_CIDRS="168.119.95.238/32"
+_cdn_ipt() { iptables -w "$@" 2>/dev/null || iptables "$@" 2>/dev/null; }
+cdn_rules_add() {
+    local c
+    for c in $CDN_CIDRS; do
+        _cdn_ipt -t nat -C PREROUTING -d "$c" -p tcp --dport 80 -j REDIRECT --to-port "$CDN_PORT" || \
+            _cdn_ipt -t nat -I PREROUTING 1 -d "$c" -p tcp --dport 80 -j REDIRECT --to-port "$CDN_PORT"
+        _cdn_ipt -t nat -C OUTPUT -d "$c" -p tcp --dport 80 -j REDIRECT --to-port "$CDN_PORT" || \
+            _cdn_ipt -t nat -I OUTPUT 1 -d "$c" -p tcp --dport 80 -j REDIRECT --to-port "$CDN_PORT"
+        conntrack -D -d "${c%/*}" >/dev/null 2>&1 || true
+    done
+}
+cdn_rules_del() {
+    local c
+    for c in $CDN_CIDRS; do
+        while _cdn_ipt -t nat -C PREROUTING -d "$c" -p tcp --dport 80 -j REDIRECT --to-port "$CDN_PORT"; do
+            _cdn_ipt -t nat -D PREROUTING -d "$c" -p tcp --dport 80 -j REDIRECT --to-port "$CDN_PORT" || break
+        done
+        while _cdn_ipt -t nat -C OUTPUT -d "$c" -p tcp --dport 80 -j REDIRECT --to-port "$CDN_PORT"; do
+            _cdn_ipt -t nat -D OUTPUT -d "$c" -p tcp --dport 80 -j REDIRECT --to-port "$CDN_PORT" || break
+        done
+    done
+}
 
 # Telegram-DC redirect helpers (ipset + -w-locked rules). Single source of
 # truth shared with the NDM hook (90-z2k-tg-redirect.sh) and the tg-watchdog.
@@ -144,7 +170,13 @@ start() {
             # client (constant safe points) it has no functional cost. Harmless on
             # non-MIPS arches, so set unconditionally.
             # shellcheck disable=SC2086  # TUNNEL_FLAGS is intentionally word-split
-            GODEBUG=asyncpreemptoff=1 $BIN --listen=:1443 --timeout=15m $TUNNEL_FLAGS -v </dev/null >> "$LOG" 2>&1 &
+            # ОДИН ПРОЦЕСС НА ОБА ПОРТА (07.09.2026). :1443 — Telegram, :1444 —
+            # cdnbase. Раньше их держали два процесса из одного бинарника, с двумя
+            # надзирателями и двумя сессиями к релею на роутер; сторож был только
+            # у первого. Назначение соединения берётся из SO_ORIGINAL_DST и от порта
+            # не зависит, так что второй процесс не давал ничего, кроме удвоения
+            # сессий на релее. S97z2k-http-tunnel остался пустышкой ради перехода.
+            GODEBUG=asyncpreemptoff=1 $BIN --listen=:1443 --listen=:$CDN_PORT --timeout=15m $TUNNEL_FLAGS -v </dev/null >> "$LOG" 2>&1 &
             child=$!
             wait "$child"
             t1=$(date +%s 2>/dev/null || echo 0)
@@ -184,6 +216,7 @@ start() {
     # new connections through the REDIRECT path instead of riding stale
     # direct-to-DC entries from before the tunnel (re)started.
     z2k_tg_flush_conntrack
+    cdn_rules_add
 }
 
 stop() {
@@ -197,11 +230,14 @@ stop() {
     # Fallback: find a tg-mtproxy-client listening on :1443 and only kill that one.
     if pidof tg-mtproxy-client >/dev/null 2>&1; then
         for p in $(pidof tg-mtproxy-client); do
-            if [ -r "/proc/$p/cmdline" ] && tr '\0' ' ' < "/proc/$p/cmdline" | grep -q -- "--listen=:1443"; then
+            # Наш процесс слушает оба порта; старый демон S97 — только :1444.
+            # Убираем и тех, и других: порт должен быть свободен к старту.
+            if [ -r "/proc/$p/cmdline" ] && tr '\0' ' ' < "/proc/$p/cmdline" | grep -qE -- "--listen=:(1443|$CDN_PORT)"; then
                 kill "$p" 2>/dev/null
             fi
         done
     fi
+    cdn_rules_del
     rm -f "$PIDFILE" "$GENFILE"
     # ОСИРОТЕВШИЕ НАДЗИРАТЕЛИ. До правки 05.09.2026 их могло накопиться
     # несколько, и в pidfile лежал только последний — остальные переживали
@@ -212,7 +248,10 @@ stop() {
         p="${_pd#/proc/}"
         [ "$p" = "$$" ] && continue
         [ -r "$_pd/cmdline" ] || continue
-        tr '\0' ' ' < "$_pd/cmdline" 2>/dev/null | grep -q "S98tg-tunnel" || continue
+        # И осиротевшие надзиратели старого S97: после перехода на один процесс
+        # он больше никого не запускает, но его прежний экземпляр в памяти об
+        # этом не знает и продолжал бы поднимать демон на :1444.
+        tr '\0' ' ' < "$_pd/cmdline" 2>/dev/null | grep -qE "S98tg-tunnel|S97z2k-http-tunnel" || continue
         [ "$(awk '/^PPid:/{print $2}' "$_pd/status" 2>/dev/null)" = "1" ] || continue
         kill "$p" 2>/dev/null
     done

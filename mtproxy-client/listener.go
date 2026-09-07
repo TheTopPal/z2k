@@ -111,6 +111,17 @@ func getOriginalDst(conn *net.TCPConn) (net.IP, int, error) {
 // собственный, потому что именно на него пришло соединение. Дополнительно
 // отсекаем приватные и петлевые адреса: телеграм там не живёт по определению,
 // и просить релей их набирать бессмысленно в любом случае.
+// listenPorts — порты всех наших слушателей (заполняется в runTunnel).
+var listenPorts map[int]bool
+
+// isSelfDialAny — isSelfDial для процесса с несколькими портами.
+func isSelfDialAny(origIP net.IP, origPort int, ports map[int]bool) bool {
+	if ports[origPort] {
+		return true
+	}
+	return isSelfDial(origIP, origPort, 0)
+}
+
 func isSelfDial(origIP net.IP, origPort, listenPort int) bool {
 	if origPort == listenPort {
 		return true

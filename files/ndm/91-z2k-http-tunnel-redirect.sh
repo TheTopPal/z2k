@@ -15,7 +15,9 @@ export PATH=/opt/sbin:/opt/bin:/sbin:/usr/sbin:/bin:/usr/bin
 [ "$type" = "ip6tables" ] && exit 0
 [ "$table" = "nat" ] || exit 0
 
-PIDFILE="/var/run/z2k-http-tunnel.pid"
+# Порт :1444 с 07.09.2026 обслуживает процесс S98tg-tunnel — по его pidfile и
+# судим, жив ли туннель. Прежний pidfile S97 больше не создаётся.
+PIDFILE="/var/run/tg-tunnel.pid"
 LISTEN_PORT="1444"
 
 # Daemon must be live; pid file alone isn't enough — could be stale.
