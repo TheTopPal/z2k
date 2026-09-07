@@ -52,6 +52,7 @@ var (
 	upstreamWriteTimeout = flag.Duration("upstream-write-timeout", 15*time.Second, "дедлайн записи в сокет DC")
 	wsWriteTimeout       = flag.Duration("ws-write-timeout", 10*time.Second, "дедлайн записи кадра в WS")
 	minBuild             = flag.String("min-build", "", "минимальная версия клиента v2 (пусто = не требовать)")
+	v1Off                = flag.Bool("v1-off", false, "не принимать протокол v1: клиенты старее r-82.1 получают отказ v1_disabled и не поднимают сессию")
 	drainTimeout         = flag.Duration("drain-timeout", 90*time.Second, "сколько ждать сессии при остановке")
 	tlsListen            = flag.String("tls-listen", "", "адрес TLS-слушателя за nginx с proxy_protocol (пусто = выключен)")
 	acmeHost             = flag.String("acme-host", "", "имя для сертификата (SNI)")
@@ -762,7 +763,7 @@ func handleWS(parentCtx context.Context, w http.ResponseWriter, r *http.Request)
 	// Отказ старой схеме без установки: 72 адреса × лестница переподключений
 	// × два процесса = 30 тыс. строк в сутки (03.09.2026). Метрика считает
 	// всё, журнал и события — по одному разу в час на адрес.
-	if s.closeReason() == "auth_rejected" && who == "-" && !legacyRejects.allow(ip, time.Now()) {
+	if (s.closeReason() == "auth_rejected" || s.closeReason() == "v1_disabled") && who == "-" && !legacyRejects.allow(ip, time.Now()) {
 		metrics.inc("relay_session_close_total", fmt.Sprintf("reason=%q", s.closeReason()))
 		return
 	}

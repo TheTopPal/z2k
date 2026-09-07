@@ -38,6 +38,17 @@ func (s *session) handshake() bool {
 	case muxHELLO:
 		return s.handshakeV2(p)
 	case muxAUTHID, muxAUTH:
+		// ВЫКЛЮЧАТЕЛЬ v1 (решение Марка 07.09.2026: «не хотят обновляться —
+		// пусть остаются без телеги»). v1 не нужен релею ничем: он держит
+		// второй протокол, гейт по часам и шум отказов исключительно ради
+		// роутеров с мёртвым автообновлением. Флагом, а не удалением кода:
+		// включается и откатывается переключением инстанса, а на день до
+		// отключения по событиям v1_disabled видно поимённо, кто ещё ходит.
+		if *v1Off {
+			s.setProto(protoV1)
+			s.killWith("v1_disabled")
+			return false
+		}
 		return s.handshakeV1(mt, p)
 	default:
 		log.Printf("[%s] first message not auth (type=0x%02x)", s.id, mt)
