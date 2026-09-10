@@ -338,17 +338,16 @@ nfqws_strategy_counts() {
     printf '%s' "$_out"
 }
 
-# Доехал ли до движка выключатель пересборки TLS ClientHello.
+# Стоит ли у движка выключатель пересборки TLS ClientHello.
 #
-# Флаг ставит init (files/S99zapret2.new, z2k_apply_reasm_gate), но ТОЛЬКО если
-# движок его знает: незнакомая опция для движка — не деградация обхода, а
-# НЕЗАПУСК демона. Патч-канал бинарники не обновляет, поэтому роутер спокойно
-# живёт с новым init и старым движком — и тогда большой ClientHello по-прежнему
-# виснет в браузере (curl при этом работает: его ClientHello влезает в сегмент),
-# хотя в описании релиза написано, что починено. Живая командная строка —
-# единственное место, где видно, чем гейт кончился.
+# С r-84 (11.09.2026) его быть НЕ должно: пересборка включена, а дедлок на
+# серверах с крошечным окном снят в форке (common/ipt.sh, connbytes 0:N —
+# SYN-ACK доходит до очереди, и защита движка по окну работает). Флаг остаётся
+# только на роутере со СТАРЫМ init (r-81…r-83): там клон-фейки и защита по окну
+# видят один сегмент. Живая командная строка — единственное место, где это видно.
 #
-# Печатает "on"/"off"; возвращает 1, если командную строку не прочитать.
+# Печатает "on" (флаг стоит) / "off" (пересборка включена); возвращает 1, если
+# командную строку не прочитать.
 nfqws_reasm_state() {
     local _cmd
     _cmd=$(nfqws_cmdline "${1:-}") || return 1
@@ -363,6 +362,21 @@ nfqws_reasm_state() {
     else
         printf 'off'
     fi
+}
+
+# Доехал ли форк r2 (common/ipt.sh с connbytes 0:N) до живых правил. Движок из
+# форка едет ТОЛЬКО полным обновлением; на патч-канале роутер живёт с новым init
+# и старым common/ipt.sh, и тогда SYN-ACK IPv4 в очередь не попадает — большой
+# ClientHello к серверу с малым окном (reg.ru) виснет в браузере при curl=200.
+# Печатает "0" (правило 0:N, ок) / "1" (старое 1:N); 1 — правил не прочитать.
+nfqws_first_packets_state() {
+    local _ipt _c
+    for _ipt in /opt/sbin/iptables /usr/sbin/iptables /sbin/iptables iptables; do
+        command -v "$_ipt" >/dev/null 2>&1 && break
+    done
+    _c=$("$_ipt" -t mangle -S FORWARD 2>/dev/null | grep -- '-j NFQUEUE' | grep -oE -- '--connbytes [0-9]+:' | head -1) || return 1
+    [ -n "$_c" ] || return 1
+    case "$_c" in *" 0:") printf '0' ;; *) printf '1' ;; esac
 }
 
 # Почему nfqws2 не поднялся.
@@ -485,14 +499,22 @@ print_service() {
         else
             printf 'плеч ротации      : (не прочитать /proc)\n'
         fi
-        # Чем кончился гейт --reasm-disable в init: на патч-канале движок может
-        # остаться старым, и тогда сайты с большим ClientHello виснут молча.
-        local _rs
+        # Пересборка TLS ClientHello с r-84 включена; флаг остаётся только у
+        # старого init — тогда клон-фейки видят один сегмент.
+        local _rs _fp
         if _rs=$(nfqws_reasm_state "$pid_first"); then
-            if [ "$_rs" = "on" ]; then
-                printf 'reasm TLS CH      : пересборка выключена (ок)\n'
+            if [ "$_rs" = "off" ]; then
+                printf 'reasm TLS CH      : пересборка включена (ок)\n'
             else
-                printf 'reasm TLS CH      : ВКЛЮЧЕНА — движок без --reasm-disable, большой ClientHello виснет\n'
+                printf 'reasm TLS CH      : ВЫКЛЮЧЕНА старым init (--reasm-disable) — клон-фейки видят один сегмент, нужно обновление\n'
+            fi
+        fi
+        # Правило очереди из форка r2: 0:N отдаёт SYN-ACK, 1:N — нет.
+        if _fp=$(nfqws_first_packets_state); then
+            if [ "$_fp" = "0" ]; then
+                printf 'очередь connbytes : 0:N (ок, SYN-ACK виден движку)\n'
+            else
+                printf 'очередь connbytes : 1:N — старый common/ipt.sh, SYN-ACK мимо очереди, большой ClientHello к reg.ru виснет; нужно полное обновление\n'
             fi
         fi
         # Источник этих стратегий — по одному файлу на пул. Пустой или
@@ -1188,15 +1210,18 @@ print_health() {
             fi
         fi
 
-        # Гейт --reasm-disable в init мог отказать: движок старее init'а.
-        # Патч-канал бинарники не обновляет, а описание релиза при этом обещает,
-        # что «сайты с большим ClientHello перестали виснуть». Симптом ровно
-        # такой: curl открывает, браузер молчит — и до этой строки его причину
-        # не было видно нигде.
-        local _rsv
+        # Старый init всё ещё выключает пересборку TLS ClientHello, или старый
+        # common/ipt.sh прячет SYN-ACK от очереди. Симптом второго: curl
+        # открывает, браузер молчит на серверах с малым окном (reg.ru).
+        local _rsv _fpv
         if _rsv=$(nfqws_reasm_state "$_nfq_pid"); then
-            if [ "$_rsv" != "on" ]; then
-                _add "движок не выключает пересборку TLS ClientHello — сайты с большим ClientHello (reg.ru и подобные) виснут в браузере, хотя curl их открывает; нужно полное обновление z2k, патч бинарник не меняет"
+            if [ "$_rsv" = "on" ]; then
+                _add "движок запущен с --reasm-disable=tls_client_hello (старый init) — клон-фейки и защита по окну видят только первый сегмент ClientHello; нужно обновление z2k"
+            fi
+        fi
+        if _fpv=$(nfqws_first_packets_state); then
+            if [ "$_fpv" != "0" ]; then
+                _add "правило очереди connbytes 1:N (старый common/ipt.sh) — SYN-ACK не доходит до движка, большой ClientHello к серверам с малым окном (reg.ru и подобные) виснет в браузере, хотя curl их открывает; нужно полное обновление z2k, патч бинарник не меняет"
             fi
         fi
     fi

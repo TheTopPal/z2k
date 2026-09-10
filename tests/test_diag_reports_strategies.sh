@@ -122,11 +122,10 @@ else
     ok "нечитаемый источник даёт отказ, а не выдуманный ноль"
 fi
 
-# --- 2. Гейт reasm виден по ЖИВОЙ командной строке ---------------------------
+# --- 2. Флаг reasm виден по ЖИВОЙ командной строке ---------------------------
 #
-# Флаг ставит init, но только если движок его знает. Патч-канал бинарники не
-# обновляет — значит роутер спокойно живёт с новым init и старым движком, и
-# тогда большой ClientHello по-прежнему виснет, хотя релиз обещает обратное.
+# С r-84 флага быть не должно (пересборка включена). Остаётся он только у
+# старого init, и это видно лишь по командной строке демона: "on" = флаг стоит.
 reasm() {
     printf '%s' "$1" | tr '|' '\n' | tr '\n' '\0' > "$TMP/cmd.bin"
     env -i PATH="$Z2K_TEST_PATH" SB="$TMP" "$Z2K_TEST_SH" -c '
@@ -179,13 +178,14 @@ else
 fi
 
 verdict() {  # verdict <что вернёт счётчик> [что вернёт гейт reasm]
-    env -i PATH="$Z2K_TEST_PATH" SB="$TMP" CNT="$1" RSM="${2:-on}" "$Z2K_TEST_SH" -c '
+    env -i PATH="$Z2K_TEST_PATH" SB="$TMP" CNT="$1" RSM="${2:-off}" FPS="${3:-0}" "$Z2K_TEST_SH" -c '
         issues=""
         _add() { issues="${issues}[!] $1
 "; }
         _nfq_pid=4242
         nfqws_strategy_counts() { [ -n "$CNT" ] || return 1; printf "%s" "$CNT"; }
         nfqws_reasm_state() { [ -n "$RSM" ] || return 1; printf "%s" "$RSM"; }
+        nfqws_first_packets_state() { [ -n "$FPS" ] || return 1; printf "%s" "$FPS"; }
         _b() { . "$SB/verdict.sh"; }
         _b
         printf "%s" "$issues"
@@ -220,11 +220,19 @@ else
     no "нечитаемое состояние молчит" "пусто" "$(verdict '')"
 fi
 
-# Отказ гейта reasm обязан попасть в ту же сводку: init про него сказал только
-# в консоль и в syslog, а человек присылает диагностику.
-case "$(verdict '224 3 0' off)" in
-    *ClientHello*) ok "гейт reasm отказал — сводка называет причину «curl работает, браузер нет»" ;;
-    *) no "отказ гейта reasm в сводке" "строка про ClientHello" "$(verdict '224 3 0' off)" ;;
+# Старый init с --reasm-disable и старый common/ipt.sh (connbytes 1:N) обязаны
+# попасть в сводку: человек присылает диагностику, а не командную строку.
+case "$(verdict '224 3 0' on)" in
+    *reasm-disable*) ok "флаг --reasm-disable у демона — сводка называет старый init" ;;
+    *) no "флаг reasm в сводке" "строка про --reasm-disable" "$(verdict '224 3 0' on)" ;;
+esac
+case "$(verdict '224 3 0' off 1)" in
+    *ClientHello*) ok "connbytes 1:N — сводка называет причину «curl работает, браузер нет»" ;;
+    *) no "connbytes 1:N в сводке" "строка про ClientHello" "$(verdict '224 3 0' off 1)" ;;
+esac
+case "$(verdict '224 3 0' off 0)" in
+    *reasm*|*ClientHello*|*connbytes*) no "исправный роутер без ложной тревоги" "тишина" "$(verdict '224 3 0' off 0)" ;;
+    *) ok "пересборка включена и connbytes 0:N — тревоги нет" ;;
 esac
 
 # --- 5. То же самое видно и в разделе service --------------------------------
@@ -233,7 +241,7 @@ esac
 # отчёт целиком. Обе половины должны говорить одно и то же.
 awk '/^print_service\(\) \{/,/^\}/' "$SRC" > "$TMP/service.sh"
 _serv_before_else=$(awk '/^    else$/{exit} {print}' "$TMP/service.sh")
-for _needle in 'плеч ротации' 'пулы без плеч' 'reasm TLS CH'; do
+for _needle in 'плеч ротации' 'пулы без плеч' 'reasm TLS CH' 'очередь connbytes'; do
     if printf '%s\n' "$_serv_before_else" | grep -q "$_needle"; then
         ok "service печатает «${_needle}» для РАБОТАЮЩЕГО движка"
     else
