@@ -411,6 +411,12 @@ main() {
 
     # Свои серверы человека — вровень с нашими.
     servers="$DEFAULT_SERVERS"
+    # Прокси-канарейки (api.github.com, www.notion.so) гоняем только по СВОИМ
+    # серверам человека и резолверу роутера: «умный» DNS живёт там, куда роутер
+    # ходит сам, а Cloudflare/Google свои прокси не подставляют. На семи
+    # публичных это стоило +35 с на проверку (62 с против 27) и ничего не
+    # находило.
+    proxy_names=""
     if [ -s "$OWN_LIST" ]; then
         while IFS= read -r line; do
             line=$(printf '%s' "$line" | tr -d ' \t\r')
@@ -424,11 +430,11 @@ main() {
             # молчащим. Проверено на роутере владельца.
             case "$line" in
                 https://*) servers="$servers
-$line||$line|" ;;
+$line||$line|"; proxy_names="$proxy_names|$line|" ;;
                 dot:*) servers="$servers
-${line#dot:}|||${line#dot:}" ;;
+${line#dot:}|||${line#dot:}"; proxy_names="$proxy_names|${line#dot:}|" ;;
                 *) servers="$servers
-$line|$line||" ;;
+$line|$line||"; proxy_names="$proxy_names|$line|" ;;
             esac
         done < "$OWN_LIST"
     fi
@@ -454,6 +460,7 @@ $line|$line||" ;;
         servers="$servers
 $_curname|$_cur||"
         CURRENT_ADDR="$_curname"
+        proxy_names="$proxy_names|$_curname|"
     fi
 
     printf '%s\n' "$servers" | while IFS='|' read -r name udp doh dot; do
@@ -486,10 +493,12 @@ $_curname|$_cur||"
             done
             # Прокси-канарейки: в счёт заглушек не идут (адрес у каждой свой),
             # только в сверку с шифрованными путями других серверов.
-            for d in $PROXY_TARGETS; do
-                a=$(udp_a "$udp" "$d" | head -1)
-                [ -n "$a" ] && printf '%s\037pu\037%s\037%s\n' "$name" "$d" "$a" >> "$_ans"
-            done
+            case "$proxy_names" in *"|$name|"*)
+                for d in $PROXY_TARGETS; do
+                    a=$(udp_a "$udp" "$d" | head -1)
+                    [ -n "$a" ] && printf '%s\037pu\037%s\037%s\n' "$name" "$d" "$a" >> "$_ans"
+                done ;;
+            esac
         fi
         # Адрес сервера для DoH/DoT — из поля udp, если это IPv4: тогда curl и
         # openssl идут к серверу напрямую, минуя резолвер роутера.
@@ -508,10 +517,12 @@ $_curname|$_cur||"
                         printf '%s\037d\037%s\037%s\n' "$name" "$d" "$a" >> "$_ans"
                     fi
                 done
-                for d in $PROXY_TARGETS; do
-                    a=$(doh_wire_a "$doh" "$d" "$_sip" | head -1)
-                    [ -n "$a" ] && printf '%s\037pd\037%s\037%s\n' "$name" "$d" "$a" >> "$_ans"
-                done
+                case "$proxy_names" in *"|$name|"*)
+                    for d in $PROXY_TARGETS; do
+                        a=$(doh_wire_a "$doh" "$d" "$_sip" | head -1)
+                        [ -n "$a" ] && printf '%s\037pd\037%s\037%s\n' "$name" "$d" "$a" >> "$_ans"
+                    done ;;
+                esac
             fi
         fi
 
@@ -570,9 +581,12 @@ $_curname|$_cur||"
         # Строка прогресса — в stderr, по мере готовности каждого сервера.
         # Двадцать секунд молчания в журнале задачи человек читает как
         # «зависло»: он не видит ни что проверяется, ни сколько осталось.
-        # Строку человеку печатаем НЕ здесь: состояние ещё не сверено с другими
-        # серверами (ref_mismatch, proxy_mismatch), и текст говорил «честно» там,
-        # где JSON через секунду писал «подменён».
+        # Предварительная строка сразу — иначе минута тишины (Марк, 11.09).
+        # Итог после сверки печатается ниже отдельно, и только там он верен.
+        printf '  %-32s опрошен: обычный %s, DoH %s, DoT %s\n' "$name" \
+            "$([ "$st_u" = none ] && printf '—' || { [ "$up_u" = 1 ] && printf 'ответил' || printf 'молчит'; })" \
+            "$([ "$st_d" = none ] && printf '—' || { [ -n "$dms" ] && printf '%s мс' "$dms" || printf 'молчит'; })" \
+            "$([ "$st_t" = none ] && printf '—' || { [ -n "$tms" ] && printf 'ок' || printf 'молчит'; })" >&2
 
         printf '%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\n' \
             "$name" "${up:-0}" "${dms:-}" "$n_ok" "$n_all" "$stub_hits" \
@@ -581,6 +595,7 @@ $_curname|$_cur||"
 
     ref_mismatch "$_ans" "$_mis"
     proxy_mismatch "$_ans" "$_mis"
+    printf '\nСверка ответов между серверами — итог:\n' >&2
 
     # --- вывод ---
     {
