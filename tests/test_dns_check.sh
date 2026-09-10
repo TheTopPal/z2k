@@ -72,6 +72,35 @@ assert_eq "одна заглушка у двух серверов — правя
     "$(_shared 188.186.154.79 188.186.154.79 10.0.0.1)"
 assert_eq "у каждого своя — на пути не правят" "" "$(_shared 10.0.0.1 10.0.0.2)"
 
+# --- 3б. Подмена «умным» DNS: свой прокси на каждый домен ------------------
+#
+# xbox-dns.ru на роутере владельца (11.09.2026): api.github.com → 87.228.47.198,
+# www.notion.so → 87.228.47.199, заглушки нет, повторов нет, согласие по
+# домену не годится (CDN). Признак — два разных домена в одном /24.
+_US=$(printf '\037'); _pans="$SB/pans"; _pmis="$SB/pmis"; : > "$_pmis"
+{
+  printf 'XBOX%spu%sapi.github.com%s87.228.47.198\n' "$_US" "$_US" "$_US"
+  printf 'XBOX%spu%swww.notion.so%s87.228.47.199\n'  "$_US" "$_US" "$_US"
+  printf 'CF%spd%sapi.github.com%s140.82.121.5\n'    "$_US" "$_US" "$_US"
+  printf 'CF%spd%swww.notion.so%s208.103.161.16\n'   "$_US" "$_US" "$_US"
+  printf 'YA%spd%sapi.github.com%s140.82.121.3\n'    "$_US" "$_US" "$_US"
+} > "$_pans"
+Z2K_DNS_LIB=1 . "$S"; proxy_mismatch "$_pans" "$_pmis"
+assert_eq "два домена в одном /24 — прокси-подмена" "XBOX" "$(cut -d"$_US" -f1 "$_pmis" | sort -u | tr '\n' ' ' | sed 's/ $//')"
+assert_eq "разные хостеры у разных серверов — не подмена" "0" "$(grep -c '^CF\|^YA' "$_pmis")"
+assert_eq "прокси-подмена — своё состояние proxy в JSON" "2" "$(grep -c 'st_[ud]="proxy"' "$S")"
+assert_eq "панель знает состояние proxy" "1" "$(grep -c 'proxy: { cls: "bad"' "$ROOT/webpanel/www/js/pages/diag.js")"
+assert_eq "строка человеку печатается ПОСЛЕ сверки" "1" "$(awk '/proxy_mismatch "\$_ans" "\$_mis"/{f=1} f && /_say "\$st_u"/{print "1"; exit}' "$S")"
+assert_eq "заворот UDP: публичные серверы получают hijack, а не оценку чужого ответа" "1" "$(grep -c 'st_u="hijack"' "$S")"
+assert_eq "резолвер роутера при завороте оценивается как раньше" "1" "$(grep -c '"$name" != "${CURRENT_ADDR:-}"' "$S")"
+assert_eq "в JSON есть, кто заворачивает" "1" "$(grep -c '"intercept_by":"%s"' "$S")"
+assert_eq "панель знает состояние hijack" "1" "$(grep -c 'hijack: { cls: "warn"' "$ROOT/webpanel/www/js/pages/diag.js")"
+assert_eq "чекер зовёт proxy_mismatch после ref_mismatch" "1" "$(grep -c '^    proxy_mismatch "\$_ans" "\$_mis"' "$S")"
+
+# --- 3в. Каждый сервер опрашивается ПО СВОЕМУ адресу, а не через резолвер роутера
+assert_eq "DoH идёт на адрес сервера (--resolve)" "2" "$(grep -c '_resolve_set "\$1"' "$S")"
+assert_eq "DoT соединяется по адресу, имя только в SNI" "1" "$(grep -c -- '-connect "\${2:-\$1}:853" -servername "\$1"' "$S")"
+
 # --- 4. Скрипт ничего не меняет ----------------------------------------------
 # Диагностика обязана быть безопасной: её запускают, когда и так всё плохо.
 for _bad in 'iptables ' 'ipset ' 'ndmc ' 'restart' '/opt/etc/init.d'; do

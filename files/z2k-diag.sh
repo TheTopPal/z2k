@@ -1550,8 +1550,49 @@ print_netpath() {
                                  : "НЕ РЕЗОЛВИТСЯ — проблема в DNS, а не в обходе")}')"
     fi
 
+    print_dns_check_snapshot
     print_insta_pins
     print_agh
+}
+
+# Снимок чекера DNS панели (files/z2k-dns-check.sh) — одной строкой, с
+# возрастом. Он и есть наша диагностика DNS; сводка раньше его не показывала
+# вовсе, и подмена «умным» DNS (резолвер роутера отдаёт свои прокси) в отчёте
+# из поля была невидима. Старый снимок — история, а не состояние, и это
+# сказано прямо.
+print_dns_check_snapshot() {
+    local _snap="${Z2K_DIAG_DNS_CHECK_JSON:-/tmp/z2k-dns-check.json}"
+    if [ ! -r "$_snap" ]; then
+        printf 'dns check         : не запускался (панель → Диагностика → проверка DNS)\n'
+        return 0
+    fi
+    local _ts _age _agestr _n _w _sp _si _cur
+    _ts=$(sed -n 's/.*"ts":\([0-9]*\).*/\1/p' "$_snap" | head -1)
+    if [ -n "$_ts" ]; then
+        _age=$(( $(date +%s) - _ts ))
+        if [ "$_age" -lt 3600 ]; then _agestr="$((_age / 60)) мин назад"
+        elif [ "$_age" -lt 86400 ]; then _agestr="$((_age / 3600)) ч назад"
+        else _agestr="$((_age / 86400)) дн назад"; fi
+    else _age=0; _agestr="дата неизвестна"; fi
+    _n=$(grep -o '"verdict":"[a-z]*"' "$_snap" | wc -l | tr -d ' ')
+    _w=$(grep -o '"verdict":"works"' "$_snap" | wc -l | tr -d ' ')
+    _sp=$(grep -o '"verdict":"spoof"' "$_snap" | wc -l | tr -d ' ')
+    _si=$(grep -o '"verdict":"silent"' "$_snap" | wc -l | tr -d ' ')
+    # Строка про резолвер роутера — то, чем пользуются клиенты.
+    _cur=$(tr ',' '\n' < "$_snap" | awk '/"name":"Резолвер роутера/ {f=1} f && /"udp":"/ {sub(/.*"udp":"/, ""); sub(/".*/, ""); print; exit}')
+    case "$_cur" in
+        proxy) _cur="резолвер роутера отдаёт свои прокси вместо сайтов" ;;
+        spoof) _cur="резолвер роутера подменяет ответы" ;;
+        works) _cur="резолвер роутера честен" ;;
+        silent) _cur="резолвер роутера не ответил" ;;
+        *) _cur="резолвер роутера не проверялся" ;;
+    esac
+    printf 'dns check         : снимок %s — серверов %s: честно %s, подмена %s, молчат %s; %s' \
+        "$_agestr" "$_n" "$_w" "$_sp" "$_si" "$_cur"
+    if [ "$_age" -gt 172800 ]; then printf ' — СНИМОК УСТАРЕЛ, перезапустите проверку в панели'
+    elif [ "$_si" -gt 0 ] && [ "$_si" = "$_n" ]; then printf ' — молчат все разом: в тот момент у роутера не было связи, это не про серверы'
+    fi
+    printf '\n'
 }
 
 # Наши записи `ip host` — те самые пины Instagram/WhatsApp.

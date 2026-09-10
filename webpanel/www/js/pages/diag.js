@@ -269,12 +269,19 @@ async function loadDiag() {
 const DNS_STATE = {
   works: { cls: "good", label: "честно" },
   spoof: { cls: "bad", label: "ответ подменён" },
+  // «Умный» DNS (xbox-dns.ru и подобные): на каждый сайт свой прокси-адрес,
+  // заглушки нет, и без этого состояния он выглядел бы честным.
+  proxy: { cls: "bad", label: "свой прокси вместо сайта" },
+  // Порт 53 завёрнут (роутером или кем-то на пути): отвечает не этот сервер,
+  // и оценивать его ответ бессмысленно — иначе вся таблица ходила бы вслед за
+  // DNS самого роутера.
+  hijack: { cls: "warn", label: "перехвачено на пути" },
   silent: { cls: "warn", label: "не ответил" },
 };
 
 function dnsPathGroup(title, sub, list, openIt) {
   if (!list.length) return "";
-  const bad = list.filter(x => x.state === "spoof").length;
+  const bad = list.filter(x => x.state === "spoof" || x.state === "proxy").length;
   const mute = list.filter(x => x.state === "silent").length;
   const ok = list.filter(x => x.state === "works").length;
 
@@ -337,7 +344,9 @@ function renderDnsResult(d) {
   // сколько подменено. Свой резолвер помечен прямо в строке, ютуб — ярлыком у
   // имени. Единственный факт, которого больше нигде не было, — адрес заглушки;
   // он переехал в подпись группы обычного DNS, где и объясняет её состояние.
-  const stubNote = d.stub ? `порт 53, без шифрования · заглушка ${escapeHtml(d.stub)}` : "порт 53, без шифрования";
+  const who = d.intercept_by === "router" ? "роутером (перехват DNS прошивки)" : "на пути к серверам";
+  const stubTail = d.stub ? ` · заглушка ${escapeHtml(d.stub)}` : "";
+  const stubNote = (d.intercept ? `порт 53 завёрнут ${who} — ответы не от серверов` : "порт 53, без шифрования") + stubTail;
   host.innerHTML = `
     ${dnsPathGroup("Обычный DNS", stubNote, plain, false)}
     ${dnsPathGroup("Шифрованный DoH", "запрос внутри HTTPS", doh, false)}
