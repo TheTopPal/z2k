@@ -184,7 +184,11 @@ function z2k_sni_pick(ctx, desync)
 	local okc, cloned = pcall(tls_client_hello_mod, desync.reasm_data or desync.dis.payload,
 		{ sni_del = true, sni_first = name, sni_snt_new = 0 })
 	if okc and cloned then
-		ch = cloned
+		-- Та же декорация, что у штатных плеч: random случайный, session id
+		-- настоящий. Клон без неё несёт random настоящего hello, и DPI видит
+		-- два hello с одним random и разным именем (r-84, 11.09.2026).
+		local okm, mod = pcall(tls_mod, cloned, "rnd,dupsid", desync.reasm_data or desync.dis.payload)
+		ch = (okm and mod) or cloned
 	else
 		local base = blob(desync, desync.arg.src or "fake_default_tls")
 		if not base then return end

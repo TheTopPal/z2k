@@ -95,19 +95,19 @@ do
     -- собранный hello человека (reasm_data), а не встроенный блоб.
     local d = v4(91, 98); d.reasm_data = "HELLO-REASM"; d.dis.payload = "HELLO-PKT"
     z2k_sni_pick(nil, d)
-    is("z2k_sni_pick положил клон собранного hello с именем сети",
-        "CLONE:HELLO-REASM|sni_del=true,sni_first=300.ya.ru,sni_snt_new=0", d.z2k_ch)
+    is("z2k_sni_pick положил клон собранного hello с именем сети и декорацией rnd,dupsid",
+        "CLONE:HELLO-REASM|sni_del=true,sni_first=300.ya.ru,sni_snt_new=0|rnd,dupsid", d.z2k_ch)
     local d1 = v4(91, 98); d1.dis.payload = "HELLO-PKT"
     z2k_sni_pick(nil, d1)
     is("без сборки клонируется payload самого пакета",
-        "CLONE:HELLO-PKT|sni_del=true,sni_first=300.ya.ru,sni_snt_new=0", d1.z2k_ch)
+        "CLONE:HELLO-PKT|sni_del=true,sni_first=300.ya.ru,sni_snt_new=0|rnd,dupsid", d1.z2k_ch)
     local d2 = v4(8, 8); d2.dis.payload = "HELLO-PKT"
     z2k_sni_pick(nil, d2)
     is("адрес вне карты — блоба нет", nil, d2.z2k_ch)
     local d3 = v4(104, 21); d3.dis.payload = "HELLO-PKT"; d3.arg = { blob = "my_ch" }
     z2k_sni_pick(nil, d3)
     is("имя блоба берётся из аргументов инстанса",
-        "CLONE:HELLO-PKT|sni_del=true,sni_first=hcaptcha.com,sni_snt_new=0", d3.my_ch)
+        "CLONE:HELLO-PKT|sni_del=true,sni_first=hcaptcha.com,sni_snt_new=0|rnd,dupsid", d3.my_ch)
     -- Запасной путь: hello не разобрался (клонировщик отказал) — прежняя
     -- подстановка имени во встроенный блоб через tls_mod, а не тишина.
     local real_clone = tls_client_hello_mod

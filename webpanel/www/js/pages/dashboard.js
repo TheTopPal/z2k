@@ -26,17 +26,18 @@ export async function renderDashboard() {
     </div>
     <!-- Обрыв на 16 КБ живёт отдельной системой: проба линии по опорным
          адресам, карта «сеть → имя», подстановка имени. В ротацию стратегий
-         он не входит, поэтому и карточка своя, а не строка в состоянии. -->
+         он не входит, поэтому и карточка своя, а не строка в состоянии.
+         Одна строка состояния и кнопка, а не плитки: плитки на всю ширину
+         под три слова — пустое место, владелец снял их 11.09.2026. -->
     <div class="card" id="tcp16-card">
       <h3>Обрыв на 16 КБ</h3>
       <p class="desc">
-        Блокировка, при которой сайт открывается, а страница обрывается на
-        первых 15–16 КБ. Перебор стратегий её не лечит — z2k проверяет линию
-        по опорным адресам и подбирает каждой сети с обрывом своё имя.
-        Проверка идёт сама каждую ночь; здесь её можно запустить сейчас.
+        Сайт открывается, а страница обрывается на первых 16 КБ. Перебор
+        стратегий это не лечит: z2k проверяет линию каждую ночь и подбирает
+        сетям с обрывом другое имя.
       </p>
-      <div class="status-grid" id="tcp16-grid">${skeletonBlocks(3)}</div>
-      <div class="btn-row">
+      <div class="tcp16-row">
+        <div class="tcp16-state" id="tcp16-state"><span class="tcp16-dot"></span><span class="tcp16-text">проверяю…</span></div>
         <button class="btn btn-primary" id="tcp16-probe-btn">Пробить 16 КБ</button>
       </div>
     </div>
@@ -170,48 +171,42 @@ export async function renderDashboard() {
   _updateGlobalUILock();
 }
 
-// Карточка «Обрыв на 16 КБ»: состояние из файлов пробы, а не из конфига.
-// Три плитки: вердикт (с давностью), сколько сетей с обрывом и сколько имён
-// подобрано, и доехал ли механизм до конфига — расхождение флага и конфига
-// и есть самая частая его болезнь, человеку её надо видеть.
-export function tcp16Cells(t) {
+// Карточка «Обрыв на 16 КБ»: одна строка состояния из файлов пробы, а не
+// из конфига. Вердикт с давностью, при найденном блоке — сколько сетей и
+// имён и доехал ли обход до конфига: расхождение флага и конфига — самая
+// частая болезнь механизма, человеку его надо видеть, и красным.
+export function tcp16Line(t) {
   const ago = (s) => {
     if (s == null) return "";
-    if (s < 3600) return ` · ${Math.max(1, Math.floor(s / 60))} мин назад`;
-    if (s < 86400) return ` · ${Math.floor(s / 3600)} ч назад`;
-    return ` · ${Math.floor(s / 86400)} дн назад`;
+    if (s < 3600) return `${Math.max(1, Math.floor(s / 60))} мин назад`;
+    if (s < 86400) return `${Math.floor(s / 3600)} ч назад`;
+    return `${Math.floor(s / 86400)} дн назад`;
   };
-  let verdict, vkind;
-  if (t.running) { verdict = "проверяется…"; vkind = ""; }
-  else if (t.measured === "1") { verdict = "блок есть" + ago(t.age); vkind = "warn"; }
-  else if (t.measured === "0") { verdict = "блока нет" + ago(t.age); vkind = "good"; }
-  else { verdict = "не измерялась"; vkind = ""; }
-  const cells = [
-    { label: "Проба линии", value: verdict, kind: vkind },
-    { label: "Сети с обрывом", value: t.measured === "1" ? `${t.nets_blocked} · имён ${t.names}` : "—", kind: "" },
-  ];
+  if (t.running) return { text: "проба идёт…", kind: "" };
   if (t.measured === "1") {
-    // Блок найден — механизм обязан быть в конфиге; иначе это расхождение.
-    cells.push({ label: "Обход в конфиге", value: t.in_config ? "включён" : "НЕТ", kind: t.in_config ? "good" : "bad" });
-  } else {
-    cells.push({ label: "Обход в конфиге", value: t.in_config ? "включён" : "не нужен", kind: "" });
+    const head = `Блок есть, проверено ${ago(t.age)}: сетей с обрывом ${t.nets_blocked}, имён подобрано ${t.names}`;
+    return t.in_config
+      ? { text: `${head}, обход включён`, kind: "warn" }
+      : { text: `${head}, но обход в конфиг не попал`, kind: "bad" };
   }
-  return cells;
+  if (t.measured === "0") return { text: `Блока нет, проверено ${ago(t.age)}`, kind: "good" };
+  return { text: "Линия ещё не проверялась", kind: "" };
 }
 
 async function refreshTcp16() {
-  const grid = document.getElementById("tcp16-grid");
-  if (!grid) return;
+  const el = document.getElementById("tcp16-state");
+  if (!el) return;
   let t;
   try {
     t = await apiGet("/tcp16");
   } catch (e) {
-    grid.innerHTML = `<div class="status-cell bad"><div class="label">Проба линии</div><div class="value">недоступна</div></div>`;
+    el.className = "tcp16-state bad";
+    el.innerHTML = `<span class="tcp16-dot"></span><span class="tcp16-text">Состояние недоступно</span>`;
     return;
   }
-  grid.innerHTML = tcp16Cells(t).map(c =>
-    `<div class="status-cell ${c.kind}"><div class="label">${c.label}</div><div class="value">${escapeHtml(c.value)}</div></div>`
-  ).join("");
+  const line = tcp16Line(t);
+  el.className = "tcp16-state" + (line.kind ? " " + line.kind : "");
+  el.innerHTML = `<span class="tcp16-dot"></span><span class="tcp16-text">${escapeHtml(line.text)}</span>`;
   const btn = document.getElementById("tcp16-probe-btn");
   if (btn) btn.disabled = !!t.running;
 }

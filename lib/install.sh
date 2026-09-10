@@ -2416,11 +2416,20 @@ TMPJUNK
     # четырёх выпусков вслепую (найдено на чистой установке 31.08.2026).
     #
     # Расхождение теперь сторожит tests/test_install_lists_match_map.sh.
+    # Через deploy_critical_file, а не `[ -f ] && cp`: переустановка из
+    # апдейтера идёт с ПУСТЫМ WORK_DIR (каждый файл тянется с GitHub по
+    # отдельности), и тихий cp превращался в no-op — списки не приезжали
+    # вовсе. Найдено 11.09.2026 на r-84: у всего флота после переустановки
+    # нет tcp16_targets.txt, и кнопка «Пробить 16 КБ» отвечала «нет списка
+    # мишеней — отложено, код 2». Кладём обе копии, как ждёт карта
+    # доставки (lib/release_map.sh): files/lists/ — эталон, lists/ — рабочая.
     for iplist in telegram_ips.txt ipset-exclude.txt cf_extra_check_ips.txt rkn-false-positive.txt meta-ranges.txt \
                   tcp16_targets.txt sni_wl_candidates.txt tcp16_nets.txt \
-                  warp-endpoints.txt; do
-        if [ -f "${WORK_DIR}/files/lists/${iplist}" ]; then
-            cp -f "${WORK_DIR}/files/lists/${iplist}" "${ZAPRET2_DIR}/lists/${iplist}" 2>/dev/null || true
+                  warp-endpoints.txt youtube_ips.txt youtube_ips6.txt; do
+        deploy_critical_file "files/lists/${iplist}" "${ZAPRET2_DIR}/lists/${iplist}" 644 || true
+        if [ -s "${ZAPRET2_DIR}/lists/${iplist}" ] && [ ! -s "${ZAPRET2_DIR}/files/lists/${iplist}" ]; then
+            mkdir -p "${ZAPRET2_DIR}/files/lists" 2>/dev/null
+            cp -f "${ZAPRET2_DIR}/lists/${iplist}" "${ZAPRET2_DIR}/files/lists/${iplist}" 2>/dev/null || true
         fi
     done
 

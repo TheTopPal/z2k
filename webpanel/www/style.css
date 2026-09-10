@@ -1593,6 +1593,37 @@ ol.steps > li::marker,
 .btn-danger:hover { background: var(--bad-alpha-mid); }
 .btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
 
+/* Обрыв на 16 КБ: строка состояния + кнопка в одну линию. Точка несёт
+   цвет вердикта, текст — сам вердикт словами; тот же ряд, что и у
+   переключателей (.toggle-row), только без нижней линии. На узком экране
+   кнопка уходит под строку. */
+.tcp16-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-12);
+  flex-wrap: wrap;
+}
+.tcp16-state {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+  font-size: 13px;
+  color: var(--text);
+  min-width: 0;
+}
+.tcp16-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+.tcp16-state.good .tcp16-dot { background: var(--good); }
+.tcp16-state.warn .tcp16-dot { background: var(--warn); }
+.tcp16-state.bad  .tcp16-dot { background: var(--bad); }
+.tcp16-state.bad  .tcp16-text { color: var(--bad); }
+
 /* ---------- FORMS ---------- */
 input[type=text], input[type=password] {
   background: var(--bg);

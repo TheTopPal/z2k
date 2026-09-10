@@ -8,8 +8,8 @@
 #   2. POST /tcp16/probe запускает ровно штатную пробу (z2k-tcp16-probe.sh без
 #      аргументов) как задачу; без файла пробы — отказ, вторая проба поверх
 #      идущей — отказ.
-#   3. Плитки карточки считаются настоящей функцией из панели: вердикт с
-#      давностью, «НЕТ» в конфиге только когда блок найден.
+#   3. Строка состояния считается настоящей функцией из панели: вердикт с
+#      давностью, «не попал в конфиг» красным только когда блок найден.
 #
 # POSIX sh + node (без node — SKIP фронтовой части; в CI node есть).
 PASS=0; FAIL=0; SKIP=0
@@ -77,22 +77,21 @@ grep -q '"GET /tcp16")' "$API" && ok "маршрут GET /tcp16" || no "марш
 grep -q '"POST /tcp16/probe")' "$API" && ok "маршрут POST /tcp16/probe" || no "маршрут POST /tcp16/probe" "есть" "нет"
 grep -q 'json_fail "409 Conflict" "проба уже идёт"' "$API" && ok "повторный запуск отвечает 409" || no "409" "есть" "нет"
 
-# --- 3. Панель: плитки карточки -----------------------------------------------
+# --- 3. Панель: строка состояния карточки ---------------------------------------
 if ! command -v node >/dev/null 2>&1; then
     skip "плитки карточки" "node не найден"
 else
     APPJS=$(sh "$HERE/lib/panel_js.sh")
-    FN=$(awk '/^  function tcp16Cells\(/,/^  }$/' "$APPJS")
+    FN=$(awk '/^  function tcp16Line\(/,/^  }$/' "$APPJS")
     if [ -z "$FN" ]; then
-        no "tcp16Cells найдена в панели" "функция" "нет"
+        no "tcp16Line найдена в панели" "функция" "нет"
     else
         printf '%s\n' "$FN" > "$TMP/fn.js"
         cat > "$TMP/drive.js" <<'JS'
 const fs = require("fs");
 const src = fs.readFileSync(process.argv[2], "utf8");
-const tcp16Cells = new Function(src + "\nreturn tcp16Cells;")();
-const j = (t) => JSON.stringify(tcp16Cells(t).map(c => [c.label, c.value, c.kind]));
-// По строке на сценарий, без вложенного JSON: проверки ниже сравнивают текст.
+const tcp16Line = new Function(src + "\nreturn tcp16Line;")();
+const j = (t) => { const l = tcp16Line(t); return l.kind + "|" + l.text; };
 console.log("blocked\t" + j({ measured: "1", age: 5400, nets_blocked: 12, names: 9, in_config: true, running: false }));
 console.log("blockedNoCfg\t" + j({ measured: "1", age: 60, nets_blocked: 1, names: 0, in_config: false, running: false }));
 console.log("clean\t" + j({ measured: "0", age: 172800, nets_blocked: 0, names: 0, in_config: false, running: false }));
@@ -100,14 +99,11 @@ console.log("never\t" + j({ measured: "", age: null, nets_blocked: 0, names: 0, 
 console.log("running\t" + j({ measured: "0", age: 10, nets_blocked: 0, names: 0, in_config: false, running: true }));
 JS
         R=$(node "$TMP/drive.js" "$TMP/fn.js" 2>&1)
-        case "$R" in *'["Проба линии","блок есть · 1 ч назад","warn"]'*) ok "блок найден: вердикт с давностью в часах" ;; *) no "блок найден" "блок есть · 1 ч назад" "$R" ;; esac
-        case "$R" in *'["Сети с обрывом","12 · имён 9",""]'*) ok "сети и имена в одной плитке" ;; *) no "сети/имена" "12 · имён 9" "$R" ;; esac
-        case "$R" in *'["Обход в конфиге","включён","good"]'*) ok "блок есть и механизм в конфиге — good" ;; *) no "in_config good" "" "$R" ;; esac
-        case "$R" in *'["Обход в конфиге","НЕТ","bad"]'*) ok "блок есть, а в конфиге нет — расхождение красным" ;; *) no "расхождение" "НЕТ/bad" "$R" ;; esac
-        case "$R" in *'["Проба линии","блока нет · 2 дн назад","good"]'*) ok "блока нет: давность в днях" ;; *) no "блока нет" "2 дн назад" "$R" ;; esac
-        case "$R" in *'["Обход в конфиге","не нужен",""]'*) ok "без блока отсутствие механизма — норма, не тревога" ;; *) no "не нужен" "" "$R" ;; esac
-        case "$R" in *'["Проба линии","не измерялась",""]'*) ok "не мерили — так и написано" ;; *) no "не измерялась" "" "$R" ;; esac
-        case "$R" in *'["Проба линии","проверяется…",""]'*) ok "идущая проба — «проверяется…»" ;; *) no "проверяется" "" "$R" ;; esac
+        case "$R" in *'blocked	warn|Блок есть, проверено 1 ч назад: сетей с обрывом 12, имён подобрано 9, обход включён'*) ok "блок найден: вердикт, давность, сети, имена, обход — одной строкой" ;; *) no "блок найден" "warn|Блок есть…" "$R" ;; esac
+        case "$R" in *'blockedNoCfg	bad|'*'но обход в конфиг не попал'*) ok "блок есть, а в конфиге нет — расхождение красным" ;; *) no "расхождение" "bad|…не попал" "$R" ;; esac
+        case "$R" in *'clean	good|Блока нет, проверено 2 дн назад'*) ok "блока нет: давность в днях, зелёным" ;; *) no "блока нет" "good|Блока нет…" "$R" ;; esac
+        case "$R" in *'never	|Линия ещё не проверялась'*) ok "не мерили — так и написано" ;; *) no "не измерялась" "" "$R" ;; esac
+        case "$R" in *'running	|проба идёт…'*) ok "идущая проба — «проба идёт…»" ;; *) no "проба идёт" "" "$R" ;; esac
     fi
     # Кнопка и карточка на дашборде, кнопка бьёт в свой маршрут.
     grep -q 'id="tcp16-probe-btn"' "$APPJS" && ok "кнопка «Пробить 16 КБ» на дашборде" || no "кнопка" "есть" "нет"
