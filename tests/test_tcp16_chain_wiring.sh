@@ -102,7 +102,7 @@ SHA_BLOCK=$(awk '/"files_sha256"/{f=1} f{print} f&&/^  }/{exit}' "$MANIFEST")
 MISS=""
 for f in files/z2k-tcp16-probe.sh files/lists/tcp16_targets.txt \
          files/lists/tcp16_nets.txt files/lists/sni_wl_candidates.txt \
-         files/lua/z2k-alert.lua files/z2k-config-validator.sh; do
+         files/lua/z2k-tcp16.lua files/z2k-config-validator.sh; do
     printf '%s' "$SHA_BLOCK" | grep -q "\"$f\"" || MISS="$MISS $f"
 done
 [ -z "$MISS" ] && ok "все файлы механизма объявлены к доставке" \

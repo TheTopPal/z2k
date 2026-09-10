@@ -43,7 +43,7 @@ echo googlevideo.com > "$MOCK/extra_strats/TCP/YT_GV/List.txt"
 echo youtube.com     > "$MOCK/extra_strats/UDP/YT/List.txt"
 echo example.com     > "$MOCK/extra_strats/TCP/RKN/List.txt"
 printf 'ISP_INTERFACE=eth3\n' > "$MOCK/config"
-cp files/lua/z2k-alert.lua files/lua/z2k-quic-silence.lua "$MOCK/lua/" 2>/dev/null
+cp files/lua/z2k-tcp16.lua "$MOCK/lua/" 2>/dev/null
 
 OPT=$(
     . ./lib/utils.sh 2>/dev/null

@@ -9,34 +9,10 @@ max_line_length = false
 -- глобали, которой нет на диске, глушит опечатку в её имени — luacheck молчит
 -- там, где обязан ругаться.
 globals = {
-    -- Desync action entry points (registered by z2k)
-    "z2k_fail_tls_alert",
-    -- Детектор молчания QUIC и его таймер-функция (files/lua/z2k-quic-silence.lua).
-    -- Обе объявляются глобально намеренно: движок ищет detector по имени в _G,
-    -- а таймер-функцию — по строке, переданной в timer_set.
-    "z2k_fail_quic_silence",
-    "z2k_quic_silence_timer",
-    "z2k_tls_stalled",
-    "z2k_mid_stream_stall",
-    -- Детектор обрыва потока посреди TLS-записи (files/lua/z2k-alert.lua).
-    -- Обе глобальны намеренно: таймер-функцию движок ищет по строке, переданной
-    -- в timer_set, а машинку кадрирования бьёт напрямую юнит-тест — она разбирает
-    -- делимый между пакетами заголовок, и через весь детектор такое не проверить.
-    "z2k_stall_timer",
-    "z2k_tls_frame_feed",
-    -- Загрузка списка имён-кандидатов и сдвиг хоста на следующее имя.
-    -- Глобальны ради теста: в список уезжают имена, которые пойдут в фейковый
-    -- ClientHello, и разбор с валидацией надо бить напрямую.
-    "z2k_sni_candidates",
-    "z2k_sni_next",
-    -- Готовит фейковый ClientHello с подобранным именем и кладёт его в поле
-    -- desync; шлёт штатный fake с optional. Глобальна, потому что движок ищет
-    -- десинк-функцию по имени в _G.
-    "z2k_sni_pick", "z2k_sni_proven", "z2k_sni_pinned", "z2k_sni_locked", "z2k_sni_for",
-    -- Наблюдение за обрывом: свой инстанс с dir=in, потому что детектор
-    -- ротатора после защёлки успеха не зовётся вовсе.
-    "z2k_stall_watch",
-    "z2k_silent_drop_detector",
+    -- Рантайм обхода обрыва на 16 КБ (files/lua/z2k-tcp16.lua). Глобальны,
+    -- потому что движок ищет десинк-функцию по имени в _G, а закрепление и
+    -- выбор имени бьёт напрямую юнит-тест.
+    "z2k_sni_pick", "z2k_sni_pinned", "z2k_sni_for",
     -- HTTP-bypass primitives (z2k-http-strats.lua, ALFiX port)
     "z2k_timing_morph",
     "z2k_quic_morph_v2",

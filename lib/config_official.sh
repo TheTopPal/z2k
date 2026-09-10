@@ -68,22 +68,6 @@ generate_nfqws2_opt_from_strategies() {
     # слабее проверенного 47-стратегий rkn_tcp rotator'а. CF возвращается
     # под rkn_tcp как было до Variant A refactor'а.
 
-    # Z2K_USE_MID_STREAM_DETECTOR (default 1, per Mark 2026-05-02 policy):
-    # bundle flag for the
-    # rkn_tcp mid-stream stall detector wiring. Off: rkn_tcp keeps
-    # its master-compatible layout (--in-range=-s5556 +
-    # failure_detector=z2k_tls_stalled), which is what the field
-    # currently runs. On: bumps rkn_tcp to --in-range=-s20000 AND
-    # switches its failure_detector to z2k_mid_stream_stall (the
-    # byte-window v3 state machine landed in 14984c3). Both knobs
-    # belong to the same rotation behavior — flipping one without
-    # the other produces a half-state (lua sees more body but the
-    # active detector still ignores it, or the byte-window detector
-    # is wired but blind because its observation cap is still 5.5K).
-    # Tests assert the two move together.
-    local Z2K_USE_MID_STREAM_DETECTOR
-    Z2K_USE_MID_STREAM_DETECTOR=$(safe_config_read "Z2K_USE_MID_STREAM_DETECTOR" "${ZAPRET2_DIR:-/opt/zapret2}/config" "1")
-
     # Пользовательские стратегии на пул — user-owned, переживают всё.
     #
     # Читается ПРИ КАЖДОЙ перегенерации конфига, а не запекается один раз: иначе
@@ -180,43 +164,24 @@ generate_nfqws2_opt_from_strategies() {
     # first; experimental z2k morphs demoted to the tail (slots 11-13). This inline is
     # only the cold-start default — extra_strats/UDP/YT/Strategy.txt (from quic_strats.ini)
     # overrides it on any real install (see below). key=yt_quic stable key; nld=2 cuts CDN churn.
-    # udp_in=3, udp_out=5 (было 8/4 с 2026-06-08, до того 1/4).
+    # udp_in=1, udp_out=5. Детектор — штатный (решение Марка 10.09.2026).
     #
-    # Замер 2026-08-19, 1646 QUIC-потоков из журнала боевого роутера разбил
-    # посылку, на которой стояла июньская правка. Мёртвый QUIC-поток шлёт
-    # МЕНЬШЕ пакетов, чем живой, а не больше: браузер не долбится в стену, а
-    # отправляет Initial, ждёт и откатывается на TCP:
-    #     мёртвые (402):  1 пакет 57, 2 пакета 222, 3+ — остальные
-    #     живые (1239):  до третьего входящего успевают отправить 2-5
-    # Значит «pos_out>=N = клиент ретрансмитит Initial = блокировка» неверно, и
-    # порогом по числу исходящих эти два класса не разделяются вообще.
+    # udp_in=1 — как в документации nfqws2: успех при втором входящем пакете,
+    # неудача при «принято <= 1». Замер 2026-08-19 по 1646 QUIC-потокам
+    # боевого роутера: входящие распределены бимодально — мёртвый поток
+    # получает 0, живой >= 3, полоса 1-2 пуста, — поэтому порог 1 разделяет
+    # классы так же, как измеренный тогда 3, и мы берём документированный.
+    # Июньский 8 держал успех недостижимым и давал 15 ротаций на 58 ложных
+    # провалов при 1 успехе на здоровом трафике.
     #
-    # Спасает схему только сброс счётчика по успеху: ротация идёт, только если три
-    # провала подряд не разбавлены ни одним успехом. При udp_in=8 успех не
-    # срабатывает практически никогда — тормоза нет. Симуляция счётчика на том же
-    # журнале (трафик был здоровый, 235 живых потоков из 237):
-    #     udp_in=8 udp_out=4  ->  15 ротаций, 58 ложных провалов,   1 успех
-    #     udp_in=3 udp_out=5  ->   1 ротация,   7 ложных провалов, 228 успехов
-    # (оценка ротаций нижняя: группировка шла по серверному IP, а реальный ключ
-    #  nld=2 объединяет все IP одного домена, там серии длиннее)
-    #
-    # udp_in=3 — успех требует четырёх входящих. Выше «просочившихся 2-3
-    # пакетов», из-за которых правили в июне, и ниже реального ответа сервера:
-    # распределение входящих бимодальное (0 либо >=3, полоса 1-2 пуста).
-    # udp_out=5 — компромисс там, где разделения нет: 21% отлова мёртвых против
-    # 5,5% у шестёрки при том же числе ложных срабатываний.
-    #
-    # ВАЖНО с 19.08.2026: на yt_quic этот компромисс больше не наступает.
-    # Провалы пула считает z2k_fail_quic_silence, и штатному детектору он
-    # UDP-пакеты своих пулов НЕ отдаёт — то есть правило «отослано >= udp_out
-    # при принято <= udp_in» не выполняется вовсе, и udp_out там инертен.
-    # Значение оставлено как есть: оно действует на пулах без нашего детектора
-    # и служит документацией порога, если детектор снимут. udp_in продолжает
-    # работать — его читает standard_success_detector.
-    #
+    # udp_out=5, а не документированные 4 — по тому же замеру: мёртвый QUIC
+    # шлёт МЕНЬШЕ пакетов, чем живой (браузер отправляет Initial, ждёт и
+    # уходит на TCP), и порог по исходящим классы не разделяет; 5 — компромисс,
+    # 21 %% отлова мёртвых против 5,5 %% у шестёрки при том же числе ложных
+    # срабатываний. Значение измерено, поэтому держим его, а не умолчание.
     # Оба порога обязаны лежать ниже окна перехвата NFQWS2_UDP_PKT_IN/OUT —
     # см. комментарий там же. Same change mirrored in quic_strats.ini.
-    quic_udp="--filter-udp=443 --filter-l7=quic --in-range=a --out-range=a --payload=all --lua-desync=circular:fails=3:time=60:udp_in=3:udp_out=5:key=yt_quic:nld=2 --lua-desync=fake:payload=quic_initial:dir=out:blob=quic5:repeats=3:ip_autottl=-2,3-20:strategy=1 --lua-desync=send:payload=quic_initial:dir=out:ipfrag=z2k_ipfrag3_tiny:ipfrag_pos_udp=8:ipfrag_pos2=32:ipfrag_overlap12=8:ipfrag_overlap23=8:ipfrag_disorder:ipfrag_next2=255:strategy=1 --lua-desync=drop:strategy=1 --lua-desync=fake:payload=quic_initial:dir=out:blob=quic5:repeats=4:ip_autottl=-2,3-20:strategy=2 --lua-desync=send:payload=quic_initial:dir=out:ipfrag=z2k_ipfrag3_tiny:ipfrag_pos_udp=8:ipfrag_pos2=32:ipfrag_overlap12=8:ipfrag_overlap23=8:ipfrag_disorder:ipfrag_next2=255:strategy=2 --lua-desync=drop:strategy=2 --lua-desync=fake:payload=quic_initial:dir=out:blob=quic_rutracker:repeats=6:strategy=3 --lua-desync=send:payload=quic_initial:dir=out:ipfrag=z2k_ipfrag3:ipfrag_pos_udp=16:ipfrag_pos2=48:ipfrag_overlap12=8:ipfrag_overlap23=8:ipfrag_disorder:ipfrag_next2=255:strategy=3 --lua-desync=drop:strategy=3 --lua-desync=fake:payload=quic_initial:dir=out:blob=fake_default_quic:repeats=6:ip_autottl=-2,3-20:strategy=4 --lua-desync=fake:payload=quic_initial:dir=out:blob=quic5:repeats=6:payload=all:ip_autottl=-2,3-20:strategy=5 --lua-desync=send:payload=quic_initial:dir=out:ipfrag:ipfrag_pos_udp=16:strategy=5 --lua-desync=drop:strategy=5 --lua-desync=udplen:payload=quic_initial:dir=out:increment=4:strategy=6 --lua-desync=fake:payload=quic_initial:dir=out:blob=quic5:repeats=2:strategy=6 --lua-desync=udplen:payload=quic_initial:dir=out:increment=8:pattern=0xFEA82025:strategy=7 --lua-desync=fake:payload=quic_initial:dir=out:blob=quic5:repeats=2:strategy=7 --lua-desync=fake:payload=quic_initial:dir=out:blob=0x00000000000000000000000000000000:repeats=2:payload=all:strategy=8 --lua-desync=send:payload=quic_initial:dir=out:ipfrag:ipfrag_pos_udp=8:strategy=8 --lua-desync=drop:strategy=8 --lua-desync=fake:payload=quic_initial:dir=out:blob=fake_default_quic:repeats=11:ip_autottl=-2,3-20:strategy=9 --lua-desync=send:payload=quic_initial:dir=out:ipfrag:ipfrag_pos_udp=24:strategy=9 --lua-desync=drop:strategy=9 --lua-desync=fake:payload=quic_initial:dir=out:blob=fake_default_quic:repeats=3:strategy=10 --lua-desync=z2k_quic_morph_v2:payload=quic_initial:dir=out:packets=2:noise=2:pad_min=12:pad_max=72:strategy=11 --lua-desync=z2k_quic_morph_v2:payload=quic_initial:dir=out:packets=2:profile=2:noise=2:pad_min=8:pad_max=64:ipfrag_pos_udp=16:ipfrag_pos2=56:ipfrag_overlap12=16:ipfrag_overlap23=8:strategy=12 --lua-desync=z2k_timing_morph:payload=quic_initial:dir=out:packets=2:chance=85:fakes=2:pad_min=12:pad_max=72:strategy=13"
+    quic_udp="--filter-udp=443 --filter-l7=quic --in-range=a --out-range=a --payload=all --lua-desync=circular:fails=3:time=60:udp_in=1:udp_out=5:key=yt_quic:nld=2 --lua-desync=fake:payload=quic_initial:dir=out:blob=quic5:repeats=3:ip_autottl=-2,3-20:strategy=1 --lua-desync=send:payload=quic_initial:dir=out:ipfrag=z2k_ipfrag3_tiny:ipfrag_pos_udp=8:ipfrag_pos2=32:ipfrag_overlap12=8:ipfrag_overlap23=8:ipfrag_disorder:ipfrag_next2=255:strategy=1 --lua-desync=drop:strategy=1 --lua-desync=fake:payload=quic_initial:dir=out:blob=quic5:repeats=4:ip_autottl=-2,3-20:strategy=2 --lua-desync=send:payload=quic_initial:dir=out:ipfrag=z2k_ipfrag3_tiny:ipfrag_pos_udp=8:ipfrag_pos2=32:ipfrag_overlap12=8:ipfrag_overlap23=8:ipfrag_disorder:ipfrag_next2=255:strategy=2 --lua-desync=drop:strategy=2 --lua-desync=fake:payload=quic_initial:dir=out:blob=quic_rutracker:repeats=6:strategy=3 --lua-desync=send:payload=quic_initial:dir=out:ipfrag=z2k_ipfrag3:ipfrag_pos_udp=16:ipfrag_pos2=48:ipfrag_overlap12=8:ipfrag_overlap23=8:ipfrag_disorder:ipfrag_next2=255:strategy=3 --lua-desync=drop:strategy=3 --lua-desync=fake:payload=quic_initial:dir=out:blob=fake_default_quic:repeats=6:ip_autottl=-2,3-20:strategy=4 --lua-desync=fake:payload=quic_initial:dir=out:blob=quic5:repeats=6:payload=all:ip_autottl=-2,3-20:strategy=5 --lua-desync=send:payload=quic_initial:dir=out:ipfrag:ipfrag_pos_udp=16:strategy=5 --lua-desync=drop:strategy=5 --lua-desync=udplen:payload=quic_initial:dir=out:increment=4:strategy=6 --lua-desync=fake:payload=quic_initial:dir=out:blob=quic5:repeats=2:strategy=6 --lua-desync=udplen:payload=quic_initial:dir=out:increment=8:pattern=0xFEA82025:strategy=7 --lua-desync=fake:payload=quic_initial:dir=out:blob=quic5:repeats=2:strategy=7 --lua-desync=fake:payload=quic_initial:dir=out:blob=0x00000000000000000000000000000000:repeats=2:payload=all:strategy=8 --lua-desync=send:payload=quic_initial:dir=out:ipfrag:ipfrag_pos_udp=8:strategy=8 --lua-desync=drop:strategy=8 --lua-desync=fake:payload=quic_initial:dir=out:blob=fake_default_quic:repeats=11:ip_autottl=-2,3-20:strategy=9 --lua-desync=send:payload=quic_initial:dir=out:ipfrag:ipfrag_pos_udp=24:strategy=9 --lua-desync=drop:strategy=9 --lua-desync=fake:payload=quic_initial:dir=out:blob=fake_default_quic:repeats=3:strategy=10 --lua-desync=z2k_quic_morph_v2:payload=quic_initial:dir=out:packets=2:noise=2:pad_min=12:pad_max=72:strategy=11 --lua-desync=z2k_quic_morph_v2:payload=quic_initial:dir=out:packets=2:profile=2:noise=2:pad_min=8:pad_max=64:ipfrag_pos_udp=16:ipfrag_pos2=56:ipfrag_overlap12=16:ipfrag_overlap23=8:strategy=12 --lua-desync=z2k_timing_morph:payload=quic_initial:dir=out:packets=2:chance=85:fakes=2:pad_min=12:pad_max=72:strategy=13"
 
     # If category strategy files exist, prefer them over hardcoded QUIC defaults.
     _cs=$(z2k_custom_strategy yt_quic) && [ -n "$_cs" ] && quic_udp="$_cs"
@@ -280,7 +245,7 @@ generate_nfqws2_opt_from_strategies() {
         if command -v z2k_emergency_tcp_pool >/dev/null 2>&1; then
             z2k_emergency_tcp_pool "$1"
         else
-            printf '%s' "--filter-tcp=443,2053,2083,2087,2096,8443 --filter-l7=tls --payload=tls_client_hello,http_req,http_reply,unknown,tls_server_hello --out-range=-s34228 --lua-desync=circular:fails=3:retrans=2:maxseq=16384:time=60:key=$1:nld=2 --lua-desync=fake:payload=tls_client_hello:dir=out:blob=fake_default_tls:repeats=6:tls_mod=rnd,dupsid,sni=www.google.com:strategy=1 --lua-desync=multisplit:payload=tls_client_hello:dir=out:pos=1,midsld:strategy=1 --lua-desync=multisplit:payload=tls_client_hello:dir=out:pos=1,sniext+1:seqovl=1:strategy=2 --lua-desync=fake:payload=tls_client_hello:dir=out:blob=fake_default_tls:repeats=6:tcp_ts=-1000:badsum:strategy=3 --lua-desync=fakedsplit:payload=tls_client_hello:dir=out:pos=1:strategy=3"
+            printf '%s' "--filter-tcp=443,2053,2083,2087,2096,8443 --filter-l7=tls --payload=tls_client_hello,http_req,http_reply,unknown,tls_server_hello --out-range=-s34228 --lua-desync=circular:fails=3:time=60:key=$1:nld=2 --lua-desync=fake:payload=tls_client_hello:dir=out:blob=fake_default_tls:repeats=6:tls_mod=rnd,dupsid,sni=www.google.com:strategy=1 --lua-desync=multisplit:payload=tls_client_hello:dir=out:pos=1,midsld:strategy=1 --lua-desync=multisplit:payload=tls_client_hello:dir=out:pos=1,sniext+1:seqovl=1:strategy=2 --lua-desync=fake:payload=tls_client_hello:dir=out:blob=fake_default_tls:repeats=6:tcp_ts=-1000:badsum:strategy=3 --lua-desync=fakedsplit:payload=tls_client_hello:dir=out:pos=1:strategy=3"
         fi
     }
 
@@ -336,27 +301,6 @@ generate_nfqws2_opt_from_strategies() {
     rkn_tcp=$(ensure_circular_nld2 "$rkn_tcp")
     quic_udp=$(ensure_circular_nld2 "$quic_udp")
 
-    # Override the default `inseq=4096` on TCP TLS circulars so the
-    # standard success_detector does NOT fire prematurely before the
-    # community-confirmed TSPU "16KB byte-gate" RST window
-    # (typically observed at 12-18KB into the incoming stream — see
-    # ntc.party 22516 / Habr 1009560). Source for the threshold
-    # mechanic: zapret-auto.lua:236 — incoming `seq > arg.inseq`
-    # triggers `standard_success_detector` → `crec.nocheck = true`,
-    # at which point a later RST in the same flow is invisible to
-    # any failure detector (zapret-auto.lua:261). With inseq=18000
-    # success only fires after we've cleared the realistic gate
-    # window; if the gate hits at 12-17K we still see the RST as a
-    # failure and rotate.
-    #
-    # Limitation acknowledged: gates above ~18KB are NOT closed by
-    # this. Reports of 24-32KB variants exist; those would need a
-    # higher inseq, but raising it further also delays legitimate
-    # success on small handshakes/payloads.
-    #
-    # Applied only to TCP TLS profiles (rkn_tcp, yt_tcp, gv_tcp).
-    # UDP profiles (quic_udp) use udp_in/udp_out instead
-    # of inseq and are left untouched.
     # ── Окно счётчика провалов (`time=`) ─────────────────────────────────────
     #
     # ЗАЧЕМ. `time` — это НЕ окно, в которое должны уложиться все три провала.
@@ -424,17 +368,52 @@ generate_nfqws2_opt_from_strategies() {
         printf '%s' "$out"
     }
 
-    ensure_circular_tcp_inseq() {
+    # ── Детекторы TCP-пулов: штатные, с параметрами из документации ──────────
+    #
+    # Решение Марка 10.09.2026: никаких своих детекторов, только
+    # standard_failure_detector / standard_success_detector bol-van. Значения
+    # ниже — из docs/manual.md апстрима (standard_*_detector), не «по дефолту»,
+    # а по смыслу каждого:
+    #
+    #   retrans=3   «считать неудачей не менее retrans ретрансмиссий». Клиент
+    #               сам ретрансмитит ClientHello с backoff 1-2-4 с — три штуки
+    #               при тихом дропе набираются за ~7 с внутри одного соединения.
+    #               Наши 2 стояли под коробку «обрыв на 16 КБ», она убивала
+    #               соединение после одной ретрансмиссии; этот класс с r-81
+    #               берётся отдельной пробой (z2k-tcp16-probe.sh) и в ротации
+    #               не участвует.
+    #   maxseq=32768 «считать ретрансмиссии в пределах исходящих 1..maxseq»;
+    #               и порог удачи по исходящему: «отправлено достаточно много
+    #               без застревания». 16384 было подгонкой под тот же обрыв.
+    #   inseq=4096  «RST и http-редирект в пределах входящих 1..inseq — неудача;
+    #               сервер прислал больше — удача». Наши 18000/24000/26000
+    #               держали ответ «неуспешным» до 18-26 КБ, чтобы обрыв на
+    #               16 КБ не засчитался успехом, — и ровно этим заставляли
+    #               рабочие хосты ждать защёлки успеха и ловить ложные
+    #               ротации.
+    #   reset       «посылать ретрансмиттеру RST, чтобы прекратить долгое
+    #               ожидание». В автохостлисте у bol-van это умолчание
+    #               (--hostlist-auto-retrans-reset=1). После третьей
+    #               ретрансмиссии стратегия уже признана провальной; без RST
+    #               клиент ещё десятки секунд долбится в мёртвое соединение, с
+    #               RST — сразу переоткрывает его на следующем плече.
+    #               Отключается Z2K_CIRCULAR_RESET=0 (r-53 включал reset при
+    #               retrans=1 и рвал рабочие потоки на одиночной потере; при
+    #               retrans=3 RST уходит только после ~7 с молчания).
+    #
+    # Проход снимает и любой :failure_detector= / :success_detector= из
+    # правленого руками Strategy.txt: имя функции, которой нет на диске,
+    # роняет движок в error() на каждом пакете профиля.
+    #
+    # Только TCP-пулы: у UDP свои пороги udp_in/udp_out.
+    local Z2K_CIRCULAR_RESET
+    Z2K_CIRCULAR_RESET=$(safe_config_read "Z2K_CIRCULAR_RESET" "${ZAPRET2_DIR:-/opt/zapret2}/config" "1")
+    ensure_circular_doc_args() {
         local input="$1"
-        local target="${2:-18000}"
-        local out=""
-        local token=""
-        local opts=""
-        local part=""
-        local rest=""
+        local out="" token="" opts="" part="" rest=""
         local old_ifs="$IFS"
 
-        set -f  # no glob: $input/$opts tokens may contain *,?,[ ] from hand-edited Strategy.txt
+        set -f  # без глоба: токены могут нести *,?,[ ] из правленого Strategy.txt
         for token in $input; do
             case "$token" in
                 --lua-desync=circular:*)
@@ -443,16 +422,14 @@ generate_nfqws2_opt_from_strategies() {
                     IFS=':'
                     for part in $opts; do
                         case "$part" in
-                            inseq=*) ;;
+                            retrans=*|maxseq=*|inseq=*|reset|no_rst|no_http_redirect) ;;
+                            failure_detector=*|success_detector=*) ;;
                             *) rest="${rest:+$rest:}$part" ;;
                         esac
                     done
                     IFS="$old_ifs"
-                    if [ -n "$rest" ]; then
-                        token="--lua-desync=circular:${rest}:inseq=${target}"
-                    else
-                        token="--lua-desync=circular:inseq=${target}"
-                    fi
+                    token="--lua-desync=circular:${rest:+$rest:}retrans=3:maxseq=32768:inseq=4096"
+                    [ "$Z2K_CIRCULAR_RESET" != "0" ] && token="${token}:reset"
                     ;;
             esac
             out="${out:+$out }$token"
@@ -465,18 +442,9 @@ generate_nfqws2_opt_from_strategies() {
     # Окно счётчика на пулах видео — см. обоснование у ensure_circular_time.
     youtube_tcp=$(ensure_circular_time "$youtube_tcp" "$Z2K_CIRCULAR_TIME_SLOW")
     youtube_gv_tcp=$(ensure_circular_time "$youtube_gv_tcp" "$Z2K_CIRCULAR_TIME_SLOW")
-    youtube_tcp=$(ensure_circular_tcp_inseq "$youtube_tcp" 18000)
-    youtube_gv_tcp=$(ensure_circular_tcp_inseq "$youtube_gv_tcp" 24000)
-    # rkn_tcp inseq=26000 (Phase 1.2) — покрывает верхнюю границу TLS-stall'а
-    # 14-25 KB по треду ntc.party 22516 #1, #3. yt остаётся на 18000 (типичный
-    # first-burst меньше). gv=24000 (выше) и game=4000 (ниже) изменены под их
-    # режимы отказа — ревью w8b0e0mex; рационал в комментах у этих строк.
-    rkn_tcp=$(ensure_circular_tcp_inseq "$rkn_tcp" 26000)
-    # game_tls inseq lowered 18000 → 4000 (Mark approved 2026-05-30): game
-    # login/auth/control TLS flows are typically << 18KB, so success seq never
-    # crossed 18000 and z2k_success_no_reset never latched. 4000 (< in-range
-    # -s5556) is reachable on short flows; the silent CH-drop failure mode is
-    # caught by the silent_drop head's out>>in heuristic (zero incoming).
+    youtube_tcp=$(ensure_circular_doc_args "$youtube_tcp")
+    youtube_gv_tcp=$(ensure_circular_doc_args "$youtube_gv_tcp")
+    rkn_tcp=$(ensure_circular_doc_args "$rkn_tcp")
 
     # ensure_circular_in_range: окно входящих обязано быть ВЫШЕ порога inseq.
     #
@@ -609,45 +577,6 @@ generate_nfqws2_opt_from_strategies() {
     youtube_gv_tcp=$(ensure_circular_in_range "$youtube_gv_tcp")
     rkn_tcp=$(ensure_circular_in_range "$rkn_tcp")
 
-    # ensure_circular_retrans: force `retrans=N` on circular tokens (strip any
-    # existing retrans=, re-add). Same strip-and-re-add shape as the nld2/inseq
-    # passes above.
-    ensure_circular_retrans() {
-        local input="$1"
-        local target="${2:-1}"
-        local out=""
-        local token=""
-        local opts=""
-        local part=""
-        local rest=""
-        local old_ifs="$IFS"
-
-        for token in $input; do
-            case "$token" in
-                --lua-desync=circular:*)
-                    opts="${token#--lua-desync=circular:}"
-                    rest=""
-                    IFS=':'
-                    for part in $opts; do
-                        case "$part" in
-                            retrans=*) ;;
-                            *) rest="${rest:+$rest:}$part" ;;
-                        esac
-                    done
-                    IFS="$old_ifs"
-                    if [ -n "$rest" ]; then
-                        token="--lua-desync=circular:${rest}:retrans=${target}"
-                    else
-                        token="--lua-desync=circular:retrans=${target}"
-                    fi
-                    ;;
-            esac
-            out="${out:+$out }$token"
-        done
-        IFS="$old_ifs"
-        printf '%s' "$out"
-    }
-
     # ensure_circular_fails: force `fails=N` on circular tokens (strip any existing
     # fails=, re-add at front). Normalizes pools to bol-van's documented default 3.
     ensure_circular_fails() {
@@ -686,137 +615,19 @@ generate_nfqws2_opt_from_strategies() {
         printf '%s' "$out"
     }
 
-    # retrans REVERTED 1→2 (2026-06-08, r-52.5). retrans=1 was set so the per-flow
-    # PPE de-offload could rotate offload-blinded silent-drop hosts — nfqws2 dedups
-    # identical-seq CH retransmits to a single "retransmission 1/2", so retrans=2
-    # never fires for that class, only retrans=1 does. BUT retrans=1 ALSO fires on a
-    # single TRANSIENT retransmit of a WORKING host → the false rotations on
-    # YouTube/Instagram HTTP/2 hosts under load came back. Mark chose fewer false
-    # rotations over auto-rotating the silent-drop class (native bypass covers youtube; a
-    # manual state.tsv pin covers the rest). The de-offload layer STAYS (it still
-    # restores retransmit visibility for the native detectors).
-    # 2026-06-08 (r-54.1): retrans REVERTED 3→2. The r-53 bump to 3 (mis-read as
-    # bol-van's "documented" value) made the failure counter need 3 retransmits to
-    # trip, so circular got STUCK on a non-working strategy for high-churn clients
-    # (YouTube on TV rotated past the only working strat and never settled). 2 is the
-    # r-52.5 field value. Flip to 1 to re-enable silent-drop auto-rotation.
-    # TCP TLS pools only; UDP doesn't use retrans.
-    local Z2K_PPE_DEOFFLOAD
-    Z2K_PPE_DEOFFLOAD=$(safe_config_read "Z2K_PPE_DEOFFLOAD" "${ZAPRET2_DIR:-/opt/zapret2}/config" "1")
-    if [ "$Z2K_PPE_DEOFFLOAD" != "0" ]; then
-        youtube_tcp=$(ensure_circular_retrans "$youtube_tcp" 2)
-        youtube_gv_tcp=$(ensure_circular_retrans "$youtube_gv_tcp" 2)
-        rkn_tcp=$(ensure_circular_retrans "$rkn_tcp" 2)
-    fi
+    # PPE-разгрузка (Z2K_PPE_DEOFFLOAD, правило файрвола в S99) остаётся как
+    # есть: она не детектор, а видимость — снимает поток с аппаратного NAT,
+    # чтобы штатный детектор вообще видел ретрансмиссии. Планку retrans к ней
+    # больше не привязываем: она задаётся выше, по документации.
 
-    # ensure_circular_arg_set: append `<arg>=<value>` (or bare `<arg>` flag)
-    # to every circular token in $input that doesn't already carry that arg.
-    # Generic helper used to wire success_detector= / no_http_redirect /
-    # failure_detector= etc. on TLS profiles. Idempotent for both forms:
-    # repeated runs of create_official_config don't pile up duplicates.
-    ensure_circular_arg_set() {
-        local input="$1"
-        local arg_name="$2"
-        local arg_value="$3"  # may be empty for flag-style args
-        local out=""
-        local token=""
-        set -f  # no glob: $input tokens may contain *,?,[ ] from hand-edited Strategy.txt
-        for token in $input; do
-            case "$token" in
-                --lua-desync=circular:*)
-                    case "$token" in
-                        # value-form already present
-                        *":${arg_name}="*) ;;
-                        # flag-form already present in middle (followed by another arg)
-                        *":${arg_name}:"*) ;;
-                        # flag-form already present at end of token
-                        *":${arg_name}") ;;
-                        *)
-                            if [ -n "$arg_value" ]; then
-                                token="${token}:${arg_name}=${arg_value}"
-                            else
-                                token="${token}:${arg_name}"
-                            fi
-                            ;;
-                    esac
-                    ;;
-            esac
-            out="${out:+$out }$token"
-        done
-        set +f
-        printf '%s' "$out"
-    }
 
-    # --- bol-van doc-alignment (2026-06-08): fails=3 default on game pools ---
-    # NOTE (r-54.1): the `reset` arg was REMOVED from every pool here. In the fork
-    # (zapret-auto.lua) `reset` does NOT zero the fail counter — it makes nfqws send
-    # a RST to the retransmitter on each failure trip. It is NOT a bol-van circular
-    # param (the doc uses time= for counter reset). Adding it in r-53 made nfqws
-    # actively RST youtube/blocked flows on transient failures → broke bypass.
-    # Inline `reset` was also dropped from the yt/gv/rkn/http_rkn circular tokens.
-    # fails normalized to bol-van's documented default 3 on the game pools (they
-    # were field-tuned to 2; Mark chose strict doc-alignment). http_rkn fails 2→3
-    # is set inline at its definition. yt/gv/rkn/quic/discord already carry fails=3.
-
-    # Этап 2 — проводка failure-детекторов (восстановление из архива, источник
-    # a12da74~1). Возвращаем кастомные failure_detector= на TLS-пулы; rkn_tcp
-    # проводится ниже через ensure_rkn_failure_detector. success_detector=
-    # (Этап 3) и no_http_redirect (Этап 4) — отдельными коммитами. inseq
-    # (native arg, ensure_circular_tcp_inseq выше) оставлен.
-    #
-    # z2k_silent_drop_detector — primary chain-head: внутри делегирует
-    # mid_stream_stall → http_mid_stream → http_partial(отцеплен) → tls_stalled →
-    # tls_alert_fatal. Все TLS-пулы (rkn/yt/gv) на нём — gv тоже (ревью
-    # w8b0e0mex: голый tls_alert_fatal пропускал тихий 16КБ-gate drop, к которому
-    # googlevideo максимально подвержен). Детекторы определены в
-    # files/lua/z2k-detectors.lua (загружены через --lua-init на Этапе 1).
-    # yt_quic (UDP): NATIVE standard_success/failure_detector (UNWIRED 2026-06-05).
-    # A custom progress-based detector (z2k_quic_success/z2k_quic_stall, kept in
-    # z2k-detectors.lua) was trialed but left unwired: in the field it never fired
-    # (phone QUIC connections abandon before the stall window) and wiring its
-    # failure_detector would REPLACE native UDP rotation — which appears to work.
-    # Functions retained for a future re-trial after threshold calibration; see
-    # project_quic_rotation_fix.
-    # gv_tcp: было z2k_tls_alert_fatal — голый лист без byte-window/stall-пути.
-    # Семантическое ревью (workflow w8b0e0mex) показало: googlevideo.com —
-    # ИМЕННО тот пул, что максимально подвержен тихому 16КБ-gate mid-stream
-    # drop'у (config_official.sh цитирует это сам), а tls_alert_fatal его НЕ
-    # видит (нет RST/FIN/alert → false на всех ветках). Переведён на
-    # chain-head silent_drop (как rkn/yt) + in-range=-s26000 (ниже) кормит
-    # byte-window, inseq=24000 (выше gate, без near-miss false-pin). Mark
-    # approved отход от rotation-«не трогаем» 2026-05-30.
-
-    # Этап 3 — success-детекторы (защита от ложного pin на block-page/neutral).
-    # z2k_http_success_positive_only пинит страту ТОЛЬКО на подтверждённый
-    # positive HTTP/TLS-ответ (не на 4xx/5xx/cross-SLD redirect — те остаются
-    # neutral, ротация продолжается). z2k_success_no_reset (yt) — успех без
-    # сброса host-fail-счётчиков (TV-клиенты: успех с другого устройства на том
-    # же домене не должен маскировать повторные webOS-фейлы).
-
-    # Этап 4 — no_http_redirect (связка с классификатором). Проверено по
-    # нативному zapret-auto.lua:182: redirect-trigger standard_failure_detector
-    # гейтится на l7payload=="http_reply" + 302/307 + is_dpi_redirect (ЛЮБОЙ
-    # cross-SLD → fail, блант). no_http_redirect его выключает; замена — наш
-    # z2k_classify_http_reply (через failure-chain tls_alert_fatal →
-    # z2k_http_classifier_check), который hard_fail'ит cross-SLD redirect ТОЛЬКО
-    # при block-маркере на target-хосте, а легитимные (oauth/shortlink/CDN) →
-    # neutral (не false-fail'ит, продолжает ротацию). Оба гейтятся на http_reply,
-    # поэтому на TLS-пулах работают только на DPI-ИНЪЕКТИРОВАННЫЙ plaintext
-    # redirect (ровно то, что надо ловить). Связка satisfied: классификатор
-    # активен на всех 5 пулах через failure-цепочку (Этап 2). ПОРЯДОК ВАЖЕН —
-    # no_http_redirect идёт ПОСЛЕ проводки детекторов (без классификатора он бы
-    # глушил redirect-детект → залипание).
-    # СНЯТО 2026-08-26. Обоснование выше держалось на замене: native-детект
-    # редиректа глушим, потому что его работу берёт наш классификатор через
-    # цепочку tls_alert_fatal -> z2k_http_classifier_check. Этой цепочки нет —
-    # она жила в удалённом z2k-detectors.lua. Больше того, замены не было и
-    # раньше: no_http_redirect срезал тот же проход «вписать, потом вырезать»,
-    # и в боевом конфиге его не было ни разу — native-детект редиректа всё это
-    # время работал.
-    #
-    # Сейчас редирект покрыт дважды и осознанно: штатный детектор ловит
-    # 302/307 на cross-SLD, а наша обёртка отдельно спрашивает классификатор
-    # про маркеры блокировки. Глушить первое ради второго нет причины.
+    # Детекторы во всех пулах — штатные bol-van (решение Марка 10.09.2026).
+    # История своих детекторов (silent_drop, mid_stream_stall, tls_alert,
+    # http-классификатор, quic_silence) закрыта: они были подпорками под
+    # обрыв на 16 КБ и ложные ротации, первое берётся отдельной пробой, второе
+    # снимают параметры из документации (ensure_circular_doc_args выше).
+    # Редирект 302/307 на чужой домен 2-го уровня ловит штатный детектор
+    # (manual: «http редиректом от DPI считается…»), no_http_redirect не ставим.
 
     # Phase 6A: auto-inject fool=z2k_dynamic_ttl into every
     # --lua-desync=fake:*  (and fakedsplit/fakeddisorder/hostfakesplit) that
@@ -1238,10 +1049,6 @@ generate_nfqws2_opt_from_strategies() {
     youtube_tcp=$(inject_z2k_range_rand "$youtube_tcp")
     youtube_gv_tcp=$(inject_z2k_range_rand "$youtube_gv_tcp")
 
-    # NOTE: rkn_tcp default failure_detector is z2k_tls_stalled
-    # (set in ensure_rkn_failure_detector() below, applied AFTER injectors
-    # run). См. там же подробности про revert mid_stream_stall → tls_stalled
-    # 2026-04-30 после code-review.
 
     # Let YouTube TLS circular operate exactly as in the upstream manual.
     # For LG webOS the orchestrator must see incoming packets on the circular
@@ -1442,150 +1249,14 @@ generate_nfqws2_opt_from_strategies() {
     # Z2K_RETRANS_POOLS), фатальный TLS-алерт, сверка TTL и весь гвард живости —
     # им всем нужен пакет с пейлоадом. Доезжали только исходящий ClientHello и
     # пустые пакеты, то есть RST без единого гварда.
-    youtube_tcp=$(ensure_youtube_tls_circular_manual_layout "$youtube_tcp" "19500")
-    youtube_gv_tcp=$(ensure_youtube_tls_circular_manual_layout "$youtube_gv_tcp" "26000")
+    youtube_tcp=$(ensure_youtube_tls_circular_manual_layout "$youtube_tcp" "5556")
+    youtube_gv_tcp=$(ensure_youtube_tls_circular_manual_layout "$youtube_gv_tcp" "5556")
 
-    # RKN: failure_detector — z2k_tls_stalled by default, overridable
-    # to z2k_mid_stream_stall through Z2K_USE_MID_STREAM_DETECTOR=1.
-    #
-    # 2026-04-30 the default was reverted from mid_stream_stall to
-    # tls_stalled because the original mid_stream_stall implementation
-    # had four architectural problems that combined into a worse-than-
-    # nothing detector — see commit fdc7145 for the full diagnosis.
-    # 14984c3 (2026-05-01) landed a v3 redesign of z2k_mid_stream_stall:
-    # per-flow byte tracking via desync.track.lua_state, multi-
-    # candidate map per nld=2 key, FIN/RST closure handling, active-
-    # retry gate via ch_gap. Tests in tests/test_mid_stream_stall.lua
-    # codify the contract.
-    #
-    # Этап 2 (2026-05-30): ensure_rkn_failure_detector ВНОВЬ функционален —
-    # инжектит :failure_detector=z2k_silent_drop_detector на rkn_tcp circular
-    # (chain-head делегирует к mid_stream_stall/tls_stalled/tls_alert). Это
-    # отменяет native-rollback от 2026-05-28; кастомные детекторы вернулись из
-    # archive/custom-detectors-rotation/ и загружены через --lua-init (Этап 1).
-    #
-    # Флаг Z2K_USE_MID_STREAM_DETECTOR (default 1) теперь управляет ТОЛЬКО
-    # --in-range byte-cap rkn (-s5556 → -s20000) — расширяет окно, которое
-    # видит chain-head, чтобы byte-window mid_stream_stall дотягивался до
-    # 16КБ-gate. Сам выбор детектора флагом НЕ переключается (всегда silent_drop).
-    ensure_rkn_failure_detector() {
-        local input="$1"
-        # Имя детектора обязательно. Значения по умолчанию здесь больше нет:
-        # оно указывало на функцию из удалённого z2k-detectors.lua, и молчаливое
-        # применение такого умолчания довело бы до движка несуществующее имя —
-        # error() на каждом пакете и профиль-пустышка при зелёной службе.
-        local detector_name="${2:?ensure_rkn_failure_detector: имя детектора обязательно}"
-        local out=""
-        local token=""
-        for token in $input; do
-            case "$token" in
-                --lua-desync=circular:*)
-                    case "$token" in
-                        *failure_detector=*) ;;
-                        *) token="${token}:failure_detector=${detector_name}" ;;
-                    esac
-                    ;;
-            esac
-            out="${out:+$out }$token"
-        done
-        printf '%s' "$out"
-    }
-
-    # Z2K_USE_MID_STREAM_DETECTOR=1 расширяет --in-range byte cap rkn_tcp
-    # (s5556 → s20000), чтобы chain-head z2k_silent_drop_detector видел
-    # 16КБ-gate-окно. Сам failure_detector ниже — z2k_silent_drop_detector
-    # (chain делегирует к mid_stream/tls_stalled/tls_alert). Флаг управляет
-    # ТОЛЬКО byte-cap, не выбором детектора.
+    # Окно входящих у всех TCP-пулов одно и берётся из документации: circular
+    # «требует начальные входящие пакеты потока… детектор успеха реагирует на
+    # s4096, добавлен ещё 1 пакет макс 1460 байт» → -s5556. Прежние 19500/26000
+    # кормили сторож обрыва на 16 КБ, которого больше нет.
     local rkn_in_range_bytes="5556"
-    if [ "$Z2K_USE_MID_STREAM_DETECTOR" = "1" ]; then
-        rkn_in_range_bytes="20000"
-    fi
-
-    # ---- Pure bol-van standard detectors (DEFAULT) --------------------------
-    # Strips ALL custom failure/success detector wiring (z2k_silent_drop_detector
-    # / z2k_http_success_positive_only / z2k_success_no_reset) + the
-    # no_http_redirect override from every TCP circular pool, falling back to
-    # bol-van's standard_failure_detector / standard_success_detector. Rationale
-    # (verified vs zapret-auto.lua:213/241): standard already catches BOTH block
-    # classes with NO outgoing-packet-count heuristic, so it cannot false-rotate
-    # working HTTP/2 hosts (the r-49 class):
-    #   - incoming RST  (seq<=inseq) — visible after the connmark-reply fix;
-    #   - silent drop   (outgoing retrans>=3 default) — client's own retransmits,
-    #                     always visible via the unbroken POSTROUTING rule;
-    #   - DPI redirect  (302/307 -> is_dpi_redirect).
-    # NON-detector args (inseq=, reset, in-range, payload) are KEPT — those are
-    # native circular tuning, not custom detectors.
-    #
-    # Ротация в движке с 18.08.2026 всегда нативная: переключателя режима
-    # больше нет, ветка r-49 снята с вооружения вместе с ним.
-    # См. [project_pure_default_rotation].
-    # СНЯТО 2026-08-26 вместе с удалением z2k-detectors.lua.
-    #
-    # Здесь стоял проход, вырезавший из профилей ЛЮБОЙ :failure_detector= и
-    # :success_detector=, и включён он был по умолчанию. То есть выше по файлу
-    # детекторы вписывались, а здесь тут же вырезались — в конфиг они не
-    # попадали ни разу. Замер боевого конфига 26.08 это подтвердил: ни одного
-    # success_detector=, из failure_detector= только наша обёртка.
-    #
-    # Вместе с проходом снят и флаг Z2K_NATIVE_DETECTORS: его нулевое значение
-    # доводило до движка имена функций, которых больше нет на диске, а движок
-    # на неизвестном имени детектора валится в error() НА КАЖДОМ ПАКЕТЕ
-    # профиля. Это не «детектор не работает» — это профиль становится
-    # пустышкой при зелёном статусе службы.
-
-    # ---- Поправки к штатному детектору (files/lua/z2k-alert.lua) -------------
-    #
-    # Прохода-резака, вырезавшего ЛЮБОЙ :failure_detector=, здесь больше нет
-    # (снят 2026-08-26). Порядок всё равно значим: проводка обязана идти после
-    # всех правок профилей, иначе очередной проход её затрёт — именно так наша
-    # обёртка однажды и исчезала из конфига молча.
-    #
-    # Сам детектор не заменяет штатный, а оборачивает: вызывает
-    # standard_failure_detector и добавляет ровно два отличия, оба измерены на
-    # боевом роутере 2026-08-18 (подробности — в шапке lua-файла):
-    #   1. ретрансмиссию считаем провалом только на ClientHello. Иначе провалом
-    #      становится любая потеря пакета в уже работающей сессии, и рабочая
-    #      страта уезжает при 29 успехах против 3 провалов;
-    #   2. фатальный TLS-алерт до ServerHello считаем провалом. Без этого целый
-    #      класс блокировок (сервер подтверждает ClientHello, отвечает алертом и
-    #      закрывается по FIN) не даёт детектору вообще никакого события, и
-    #      нерабочая страта не ротируется никогда.
-    #
-    # Изначально ставилось только на rkn_tcp. С 2026-08-18 стоит и на пулах
-    # видео: замер по ним получен, см. ниже у самой проводки.
-    #
-    # Проводка ставится ТОЛЬКО если файл детектора реально лежит на диске.
-    # Без него движок валится в error() на каждом пакете профиля, а это не
-    # «детектор не работает», это «профиль РКН стал пустышкой» — при зелёном
-    # статусе сервиса и без единой жалобы в логе.
-    if [ -f "${ZAPRET2_DIR:-/opt/zapret2}/lua/z2k-alert.lua" ]; then
-        rkn_tcp=$(ensure_rkn_failure_detector "$rkn_tcp" "z2k_fail_tls_alert")
-        # Пулы видео — замер 2026-08-18 на LG webOS. На заведомо нерабочей
-        # стратегии соединение поднималось, сервер отдавал 4482 байта и дальше
-        # слал один и тот же сегмент 15-16 раз. Ни RST, ни FIN, ни исходящих
-        # ретрансмитов — штатный детектор молчал (676 вызовов, ноль событий),
-        # страта стояла вечно, видео и превью не грузились.
-        # С обёрткой: ytimg 20->22, googleusercontent 20->21, ggpht 20->21,
-        # googlevideo 20->21, одиннадцать ротаций, всё на живом трафике.
-        youtube_tcp=$(ensure_rkn_failure_detector "$youtube_tcp" "z2k_fail_tls_alert")
-        youtube_gv_tcp=$(ensure_rkn_failure_detector "$youtube_gv_tcp" "z2k_fail_tls_alert")
-    else
-        echo "WARN: lua/z2k-alert.lua отсутствует — детекторы остаются чисто штатными" 1>&2
-    fi
-
-    # QUIC — детектор по молчанию, отдельным файлом и отдельным гейтом.
-    #
-    # Штатный детектор для QUIC не работает в принципе: он считает провалом
-    # «отослано много, принято мало», а мёртвый QUIC-поток шлёт МЕНЬШЕ пакетов,
-    # чем живой — браузер не ретрансмитит Initial, а уходит на TCP. Замер
-    # 2026-08-19 по 1646 потокам: ни один порог от 2 до 12 эти классы не
-    # разделяет. Различает их время, поэтому детектор ждёт ответа по таймеру.
-    if [ -f "${ZAPRET2_DIR:-/opt/zapret2}/lua/z2k-quic-silence.lua" ]; then
-        quic_udp=$(ensure_rkn_failure_detector "$quic_udp" "z2k_fail_quic_silence")
-    else
-        echo "WARN: lua/z2k-quic-silence.lua отсутствует — QUIC остаётся на штатном детекторе" 1>&2
-    fi
-
     rkn_tcp=$(ensure_youtube_tls_circular_manual_layout "$rkn_tcp" "$rkn_in_range_bytes")
 
     # Окно входящих обязано быть выше порога inseq — второй проход.
@@ -1745,10 +1416,9 @@ generate_nfqws2_opt_from_strategies() {
     # имя из белого списка провайдера, — 163654 за 0.5 с. Несущая часть — ИМЯ, а
     # не разрез: результат одинаков и с hostfakesplit, и с multisplit:seqovl=1.
     #
-    # Имя подбирается В РАНТАЙМЕ (files/lua/z2k-alert.lua): детектор ловит обрыв
-    # посреди TLS-записи, сдвигает хост на следующего кандидата из
-    # lists/sni_wl_candidates.txt, и следующая попытка проверяет уже его.
-    # Перебор идёт на трафике самого человека, отдельных проб нет.
+    # Имя подставляется В РАНТАЙМЕ (files/lua/z2k-tcp16.lua) по карте
+    # «сеть → имя», которую готовит проба (z2k-tcp16-probe.sh). Перебора на
+    # трафике человека нет, в ротации механизм не участвует.
     #
     # ДВЕ СТРОКИ, И ОБЕ ДО circular, БЕЗ strategy=N. Инстанс без этого аргумента
     # circular не вызывает вовсе — его исполняет линейный оркестратор. Значит имя
@@ -1790,45 +1460,17 @@ generate_nfqws2_opt_from_strategies() {
     local _sp_flag=""
     [ -r "${ZAPRET2_DIR:-/opt/zapret2}/state/tcp16.flag" ] &&
         _sp_flag=$(cat "${ZAPRET2_DIR:-/opt/zapret2}/state/tcp16.flag" 2>/dev/null)
-    if [ "$Z2K_SNI_STALL" = "1" ] && [ "$_sp_flag" = "1" ] && [ -n "$_sp_circ" ]; then
+    if [ "$Z2K_SNI_STALL" = "1" ] && [ "$_sp_flag" = "1" ] && [ -n "$_sp_circ" ] \
+       && [ -f "${ZAPRET2_DIR:-/opt/zapret2}/lua/z2k-tcp16.lua" ]; then
         local _sp_k _sp_n
         _sp_k=$(printf '%s' "$_sp_circ" | sed -n 's/.*:\(key=[a-z_]*\).*/\1/p')
         _sp_n=$(printf '%s' "$_sp_circ" | sed -n 's/.*:\(nld=[0-9]*\).*/\1/p')
-        # Наблюдение за обрывом — СВОИМ инстансом с dir=in. Внутрь детектора
-        # его класть нельзя: детектор ротатора после защёлки успеха не
-        # зовётся вовсе, и все 16 КБ прошли бы мимо. Проверено на живом
-        # обрыве: circular отработал 48 раз, детектор — ни разу.
-        # cap — потолок видимости в пакетах. Без него сторож принимал за обрыв
-        # ЛЮБУЮ большую загрузку: поток уходит за потолок очереди, пакеты
-        # перестают доходить, и молчание выглядит как остановка. Замер
-        # 30.08.2026: chatgpt.com отдал 340 КБ, сторож увидел 17137 Б и записал
-        # рабочему хосту чужое имя.
-        local _sp_cap
-        _sp_cap=$(z2k_reply_pkt_cap "$(safe_config_read "Z2K_USE_MID_STREAM_DETECTOR" "${ZAPRET2_DIR:-/opt/zapret2}/config" "1")")
-        # СТОРОЖУ — СВОЙ, РАСШИРЕННЫЙ ДИАПАЗОН.
-        #
-        # Профиль ограничивает разбор первыми килобайтами ответа (--in-range),
-        # и закрывающий пакет большой загрузки до инстанса не доходит вовсе:
-        # замер 30.08.2026 — «in pos a0 s168082 ... is beyond range a0-s27500».
-        # Ровно этот пакет и доказывает, что поток ехал за нашим горизонтом,
-        # а без него сторож не мог отличить здоровую крупную загрузку от
-        # обрыва и записывал рабочим хостам чужие имена.
-        #
-        # Диапазон — позиционное состояние разборщика: оно действует на всё,
-        # что объявлено дальше. Поэтому сразу за нашим инстансом возвращаем
-        # прежнее значение, иначе расширение утечёт на circular и сломает ему
-        # планку inseq. Если в голове диапазона нет — не трогаем ничего:
-        # восстанавливать было бы нечем.
-        local _sp_ir="" _t3 _seen_circ=0
-        for _t3 in $rkn_tcp; do
-            case "$_t3" in
-                --lua-desync=circular:*) _seen_circ=1; break ;;
-                --in-range=*) _sp_ir="$_t3" ;;
-            esac
-        done
-        [ "$_seen_circ" = "1" ] || _sp_ir=""
-        sni_pick="${_sp_ir:+--in-range=a- }--lua-desync=z2k_stall_watch:dir=in:cap=${_sp_cap}${_sp_k:+:$_sp_k}${_sp_n:+:$_sp_n}${_sp_ir:+ $_sp_ir}"
-        sni_pick="$sni_pick --lua-desync=z2k_sni_pick:payload=tls_client_hello:dir=out:blob=z2k_ch${_sp_k:+:$_sp_k}${_sp_n:+:$_sp_n}"
+        # Подстановка имени — чистый рантайм карты «сеть → имя» из
+        # state/tcp16_sni.txt (её готовит проба): z2k_sni_pick подбирает blob
+        # z2k_ch по AS адресата, следующий fake его отправляет. Сторожа обрыва
+        # и поштучного перебора имён здесь больше нет — механизм в ротации не
+        # участвует (решение Марка 10.09.2026).
+        sni_pick="--lua-desync=z2k_sni_pick:payload=tls_client_hello:dir=out:blob=z2k_ch${_sp_k:+:$_sp_k}${_sp_n:+:$_sp_n}"
         sni_pick="$sni_pick --lua-desync=fake:payload=tls_client_hello:dir=out:blob=z2k_ch:optional:repeats=8:tcp_ts=-1000"
     fi
 
@@ -1993,19 +1635,7 @@ generate_nfqws2_opt_from_strategies() {
     #                 incoming replies — только detectors классифицируют.
     http_rkn="--filter-tcp=80 $wl_excl --hostlist=${extra_strats_dir}/TCP/RKN/List.txt${rkn_http_extras} --in-range=-s5556 --payload=http_req,empty,http_reply --lua-desync=circular:fails=3:time=60:key=http_rkn:nld=2 --lua-desync=http_methodeol:payload=http_req:dir=out:strategy=1 --lua-desync=syndata:payload=http_req:dir=out:strategy=2 --lua-desync=multisplit:payload=http_req:dir=out:strategy=2 --lua-desync=hostfakesplit:payload=http_req:dir=out:ip_ttl=2:repeats=1:strategy=3 --lua-desync=fake:payload=http_req:dir=out:blob=fake_default_http:badsum:repeats=1:strategy=4 --lua-desync=fakedsplit:payload=http_req:dir=out:pos=method+2:badsum:strategy=5 --lua-desync=fake:payload=http_req:dir=out:blob=0x0E0E0F0E:tcp_md5:strategy=6 --lua-desync=multisplit:payload=http_req:dir=out:pos=host+1:seqovl=2:strategy=6 --lua-desync=fake:payload=http_req:dir=out:blob=fake_default_http:badsum:repeats=1:strategy=7 --lua-desync=multisplit:payload=http_req:dir=out:pos=method+2:strategy=7 --lua-desync=fake:payload=http_req:dir=out:blob=fake_default_http:badsum:repeats=1:strategy=8 --lua-desync=fakedsplit:payload=http_req:dir=out:pos=method+2:ip_autottl=2,1-64:badsum:strategy=8 --in-range=x --new"
 
-    # Обёртка нужна и здесь. Пул объявляется НИЖЕ блока проводки TLS-пулов, и
-    # до 19.08.2026 его туда просто забыли добавить: после среза кастомных
-    # детекторов http_rkn оставался на голом standard_failure_detector без
-    # единого гварда. Цена — apple.com уехал с рабочей первой стратегии на
-    # вторую на живом трафике, замер тем же вечером:
-    #   standard_failure_detector: incoming RST s524 in range s4096   x13/мин
-    # RST после 524 байт ответа — это сервер закрылся сам, а не DPI. Обёртка
-    # отсеивает такие по TTL и по живости хоста; исходящий ретрансмит она
-    # пропускает в штатный детектор на http_req ровно так же, как на
-    # ClientHello, поэтому детект молчаливого дропа не теряется.
-    if [ -f "${ZAPRET2_DIR:-/opt/zapret2}/lua/z2k-alert.lua" ]; then
-        http_rkn=$(ensure_rkn_failure_detector "$http_rkn" "z2k_fail_tls_alert")
-    fi
+    # http_rkn — тот же штатный детектор: ретрансмиссии, RST, DPI-редирект.
     add_hostlist_line "${extra_strats_dir}/TCP/RKN/List.txt" "$http_rkn"
 
     # --------------------------------------------------------------------------
@@ -2129,21 +1759,14 @@ NFQWS2_OPT
 
 # Потолок видимости входящего потока В ПАКЕТАХ: сколько ответных пакетов
 # iptables отдаёт в очередь (NFQWS2_TCP_PKT_IN, `--connbytes 1:N ... dir reply`).
-# Дальше него движок не видит НИЧЕГО — ни данных, ни FIN, — и молчание там
-# ничего не означает.
 #
-# Число нужно в двух местах: в теле конфига и в аргументе сторожа обрыва,
-# который по нему отличает «поток встал» от «мы ослепли». Разъедься эти два
-# места — сторож начнёт судить вслепую, поэтому значение живёт в одной функции.
+# 10 — master-совместимое значение: детектору успеха нужно inseq=4096 байт
+# (manual, standard_success_detector) плюс один пакет, это четыре полных
+# пакета; десять — двойной запас на мелкие записи рукопожатия. Прежние 50
+# кормили сторож обрыва на 16 КБ (+28 %% пакетов в очередь, +9 %% CPU по
+# замеру 18.08.2026); сторожа больше нет.
 z2k_reply_pkt_cap() {
-    # 50, а не 30: замер на боевом роутере 18.08.2026 — при 30 пакетах ответа
-    # наблюдение обрывалось около 20 КБ (первые пакеты потока мелкие: записи
-    # рукопожатия, кадры HTTP/2), а порог успеха inseq у rkn_tcp стоит на 26000,
-    # и успех не срабатывал НИ РАЗУ — счётчик провалов было нечем обнулять.
-    # С 50 глубина дошла до 26849 и успех наконец сработал. Цена того же
-    # прогона: +28% пакетов в очередь, +9% процессорного времени, дропов 0.
-    # При флаге 0 остаётся master-совместимая десятка: видно только рукопожатие.
-    if [ "$1" = "1" ]; then echo 50; else echo 10; fi
+    echo 10
 }
 
 create_official_config() {
@@ -2277,7 +1900,7 @@ create_official_config() {
     local saved_GAME_WARP_ENABLED="0"
     local saved_TG_PROXY_USER_DISABLED="0"
     local saved_ENABLED="1"
-    local saved_Z2K_USE_MID_STREAM_DETECTOR="1"
+    local saved_Z2K_CIRCULAR_RESET="1"
     local saved_Z2K_PADENCAP="1"
     local saved_Z2K_NFQWS2_TEMPLATES="1"
     local saved_Z2K_INJECT_TLS_MODS="0"
@@ -2324,12 +1947,9 @@ create_official_config() {
         # DISABLE_CUSTOM. Default 1: fresh install or a config missing the key
         # comes up enabled, so users who never stopped are unaffected.
         saved_ENABLED=$(safe_config_read "ENABLED" "$config_file" "1")
-        # Z2K_USE_MID_STREAM_DETECTOR / Z2K_PADENCAP — default ON (per Mark
-        # 2026-05-02 policy: все нововведения по умолчанию включены). Если
-        # старый config не содержит ключ, считаем "1" — фичу хочется
-        # включить даже на routers где конфиг был сгенерирован до её
-        # появления. Юзер может выставить =0 explicitly чтобы откатиться.
-        saved_Z2K_USE_MID_STREAM_DETECTOR=$(safe_config_read "Z2K_USE_MID_STREAM_DETECTOR" "$config_file" "1")
+        # Z2K_CIRCULAR_RESET — RST ретрансмиттеру после фиксации неудачи
+        # (см. ensure_circular_doc_args). Умолчание 1, переживает регенерацию.
+        saved_Z2K_CIRCULAR_RESET=$(safe_config_read "Z2K_CIRCULAR_RESET" "$config_file" "1")
         saved_Z2K_PADENCAP=$(safe_config_read "Z2K_PADENCAP" "$config_file" "1")
         saved_Z2K_NFQWS2_TEMPLATES=$(safe_config_read "Z2K_NFQWS2_TEMPLATES" "$config_file" "1")
         saved_Z2K_INJECT_TLS_MODS=$(safe_config_read "Z2K_INJECT_TLS_MODS" "$config_file" "0")
@@ -2379,11 +1999,9 @@ create_official_config() {
         saved_Z2K_AUTO_UPDATE_ENABLED=$(safe_config_read "Z2K_AUTO_UPDATE_ENABLED" "$config_file" "1")
     fi
 
-    # NFQWS2_TCP_PKT_IN — глубина наблюдения за ответом. Само число и повод
-    # для него лежат в z2k_reply_pkt_cap: его читает и сторож обрыва, и потому
-    # оно обязано быть одним.
+    # NFQWS2_TCP_PKT_IN — глубина наблюдения за ответом, см. z2k_reply_pkt_cap.
     local nfqws2_tcp_pkt_in
-    nfqws2_tcp_pkt_in=$(z2k_reply_pkt_cap "$saved_Z2K_USE_MID_STREAM_DETECTOR")
+    nfqws2_tcp_pkt_in=$(z2k_reply_pkt_cap)
 
     # Создать полный config файл
     local z2k_mode_filter=hostlist
@@ -2527,7 +2145,7 @@ NFQWS2_TCP_PKT_IN="${nfqws2_tcp_pkt_in}"
 # осторожная величина, а не смелая. TCP у нас давно 50/20.
 #
 # Инвариант, который обязан держаться: окно > порога детектора.
-#   yt_quic   udp_in=3 udp_out=5   -> нужно >=6, ставим 8
+#   yt_quic   udp_in=1 udp_out=5   -> нужно >=6, ставим 8
 #   discord   udp_in=1 udp_out=4   -> нужно >=5, ставим 8
 NFQWS2_UDP_PKT_OUT="${Z2K_UDP_PKT_OUT}"
 NFQWS2_UDP_PKT_IN="${Z2K_UDP_PKT_IN}"
@@ -2692,13 +2310,10 @@ GAME_WARP_ENABLED=${saved_GAME_WARP_ENABLED}
 # daemon, который юзер явно остановил.
 TG_PROXY_USER_DISABLED=${saved_TG_PROXY_USER_DISABLED}
 
-# Mid-stream stall detector bundle (default 1 per Mark 2026-05-02
-# policy: все нововведения по умолчанию включены). At 1: rkn_tcp swaps
-# failure_detector to z2k_mid_stream_stall, --in-range to -s20000, AND
-# NFQWS2_TCP_PKT_IN bumps to 30 — all three move atomically. =0 для
-# отката. Persisted here so a user-set value survives
-# create_official_config regen.
-Z2K_USE_MID_STREAM_DETECTOR=${saved_Z2K_USE_MID_STREAM_DETECTOR}
+# RST ретрансмиттеру после фиксации неудачи ротатором (аргумент reset у
+# circular, документация nfqws2). 1 — включено; 0 — откат, если на линии
+# RST рвёт живые потоки.
+Z2K_CIRCULAR_RESET=${saved_Z2K_CIRCULAR_RESET}
 
 # TLS extension auto-injection master switch (default 0, 2026-05-03):
 # выключено по дефолту после field-проверки — auto-injection

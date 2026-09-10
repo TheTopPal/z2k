@@ -1,5 +1,5 @@
-import { apiPost, toastErr } from "../core/api.js";
-import { $app, skeletonBlocks } from "../core/dom.js";
+import { apiGet, apiPost, toastErr } from "../core/api.js";
+import { $app, escapeHtml, skeletonBlocks } from "../core/dom.js";
 import { refreshStatus } from "../core/loadorder.js";
 import { toast } from "../core/toast.js";
 import { JOB_FAIL, _updateGlobalUILock, awaitPanelBack, confirmTypedModal, jobOutcome, jobUnresolved, openJobModal, unresolvedMsg } from "../job.js";
@@ -22,6 +22,22 @@ export async function renderDashboard() {
         <button class="btn btn-primary" data-svc="start" data-target="active">Запустить</button>
         <button class="btn" data-svc="restart" data-target="active">Перезапустить</button>
         <button class="btn btn-danger" data-svc="stop" data-target="stopped">Остановить</button>
+      </div>
+    </div>
+    <!-- Обрыв на 16 КБ живёт отдельной системой: проба линии по опорным
+         адресам, карта «сеть → имя», подстановка имени. В ротацию стратегий
+         он не входит, поэтому и карточка своя, а не строка в состоянии. -->
+    <div class="card" id="tcp16-card">
+      <h3>Обрыв на 16 КБ</h3>
+      <p class="desc">
+        Блокировка, при которой сайт открывается, а страница обрывается на
+        первых 15–16 КБ. Перебор стратегий её не лечит — z2k проверяет линию
+        по опорным адресам и подбирает каждой сети с обрывом своё имя.
+        Проверка идёт сама каждую ночь; здесь её можно запустить сейчас.
+      </p>
+      <div class="status-grid" id="tcp16-grid">${skeletonBlocks(3)}</div>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="tcp16-probe-btn">Пробить 16 КБ</button>
       </div>
     </div>
     <!-- ОТДЕЛЬНАЯ КАРТОЧКА, А НЕ ЧЕТВЁРТАЯ КНОПКА В РЯДУ ВЫШЕ.
@@ -77,6 +93,33 @@ export async function renderDashboard() {
     });
   }));
 
+  refreshTcp16();
+  $app.querySelectorAll("#tcp16-probe-btn").forEach(btn => btn.addEventListener("click", async () => {
+    if (btn.disabled) return;
+    btn.disabled = true;
+    let resp;
+    try {
+      resp = await apiPost("/tcp16/probe");
+    } catch (e) {
+      btn.disabled = false;
+      toastErr("Не удалось запустить пробу: ", e);
+      return;
+    }
+    btn.disabled = false;
+    openJobModal("Проба линии на обрыв 16 КБ", resp.job, {
+      // Если ответ пробы сменил картину, она пересобирает конфиг и
+      // перезапускает сервис — короткий обрыв панели тут штатный.
+      tolerateOutage: true,
+      onDone: (d) => {
+        const outcome = jobOutcome(d);
+        if (outcome === JOB_FAIL) toast("Проба не завершилась — подробности в журнале выше", "bad");
+        // Проба могла перезапустить сервис; дождаться панели, потом читать.
+        if (jobUnresolved(outcome)) awaitPanelBack().then(() => { refreshTcp16(); refreshStatus(); });
+        else setTimeout(() => { refreshTcp16(); refreshStatus(); }, 500);
+      },
+    });
+  }));
+
   $app.querySelectorAll("[data-svc]").forEach(btn => {
     btn.addEventListener("click", async () => {
       if (btn.disabled) return;
@@ -125,4 +168,50 @@ export async function renderDashboard() {
   refreshUpdateBanner();
   renderStatsNotice();
   _updateGlobalUILock();
+}
+
+// Карточка «Обрыв на 16 КБ»: состояние из файлов пробы, а не из конфига.
+// Три плитки: вердикт (с давностью), сколько сетей с обрывом и сколько имён
+// подобрано, и доехал ли механизм до конфига — расхождение флага и конфига
+// и есть самая частая его болезнь, человеку её надо видеть.
+export function tcp16Cells(t) {
+  const ago = (s) => {
+    if (s == null) return "";
+    if (s < 3600) return ` · ${Math.max(1, Math.floor(s / 60))} мин назад`;
+    if (s < 86400) return ` · ${Math.floor(s / 3600)} ч назад`;
+    return ` · ${Math.floor(s / 86400)} дн назад`;
+  };
+  let verdict, vkind;
+  if (t.running) { verdict = "проверяется…"; vkind = ""; }
+  else if (t.measured === "1") { verdict = "блок есть" + ago(t.age); vkind = "warn"; }
+  else if (t.measured === "0") { verdict = "блока нет" + ago(t.age); vkind = "good"; }
+  else { verdict = "не измерялась"; vkind = ""; }
+  const cells = [
+    { label: "Проба линии", value: verdict, kind: vkind },
+    { label: "Сети с обрывом", value: t.measured === "1" ? `${t.nets_blocked} · имён ${t.names}` : "—", kind: "" },
+  ];
+  if (t.measured === "1") {
+    // Блок найден — механизм обязан быть в конфиге; иначе это расхождение.
+    cells.push({ label: "Обход в конфиге", value: t.in_config ? "включён" : "НЕТ", kind: t.in_config ? "good" : "bad" });
+  } else {
+    cells.push({ label: "Обход в конфиге", value: t.in_config ? "включён" : "не нужен", kind: "" });
+  }
+  return cells;
+}
+
+async function refreshTcp16() {
+  const grid = document.getElementById("tcp16-grid");
+  if (!grid) return;
+  let t;
+  try {
+    t = await apiGet("/tcp16");
+  } catch (e) {
+    grid.innerHTML = `<div class="status-cell bad"><div class="label">Проба линии</div><div class="value">недоступна</div></div>`;
+    return;
+  }
+  grid.innerHTML = tcp16Cells(t).map(c =>
+    `<div class="status-cell ${c.kind}"><div class="label">${c.label}</div><div class="value">${escapeHtml(c.value)}</div></div>`
+  ).join("");
+  const btn = document.getElementById("tcp16-probe-btn");
+  if (btn) btn.disabled = !!t.running;
 }

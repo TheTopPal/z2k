@@ -64,7 +64,7 @@ rd() { sh -c "Z2K_AU_SOURCE_ONLY=1 . ./lib/auto_update.sh 2>/dev/null
 au_manifest_install_targets ./UPDATES.json '$1' | tr '\n' '|'"; }
 # Файл для этой проверки должен просто существовать в дереве; z2k-detectors.lua,
 # стоявший здесь раньше, удалён 26.08.2026 как недостижимый.
-assert_eq "апдейтер читает ту же цель"          "/opt/zapret2/lua/z2k-alert.lua|" "$(rd files/lua/z2k-alert.lua)"
+assert_eq "апдейтер читает ту же цель"          "/opt/zapret2/lua/z2k-tcp16.lua|" "$(rd files/lua/z2k-tcp16.lua)"
 assert_eq "апдейтер видит цель вне ZAPRET2_DIR" "/opt/etc/init.d/S51z2k-warp|"        "$(rd files/init.d/S51z2k-warp)"
 assert_eq "апдейтер видит обе цели списка"      "/opt/zapret2/files/lists/telegram_ips.txt|/opt/zapret2/lists/telegram_ips.txt|" \
     "$(rd files/lists/telegram_ips.txt)"

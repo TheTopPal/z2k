@@ -155,285 +155,6 @@ INPUT4="--lua-desync=circular:key=test"
 RESULT4=$(ensure_circular_nld2 "$INPUT4")
 assert_contains "nld2: adds nld=2 to minimal circular" "nld=2" "$RESULT4"
 
-# ==============================================================================
-# TEST: ensure_circular_retrans (replicated from config_official.sh). The function
-# forces retrans=N on circular tokens; tests below exercise targets 1 AND 2.
-# NOTE: the production CALL-SITE reverted target 1→2 in r-52.5 (retrans=1 caused
-# false rotations on working YouTube/Instagram hosts); the function itself is
-# unchanged and still supports any target. Kept in sync with lib/config_official.sh.
-# ==============================================================================
-
-ensure_circular_retrans() {
-    local input="$1"
-    local target="${2:-1}"
-    local out=""
-    local token=""
-    local opts=""
-    local part=""
-    local rest=""
-    local old_ifs="$IFS"
-
-    for token in $input; do
-        case "$token" in
-            --lua-desync=circular:*)
-                opts="${token#--lua-desync=circular:}"
-                rest=""
-                IFS=':'
-                for part in $opts; do
-                    case "$part" in
-                        retrans=*) ;;
-                        *) rest="${rest:+$rest:}$part" ;;
-                    esac
-                done
-                IFS="$old_ifs"
-                if [ -n "$rest" ]; then
-                    token="--lua-desync=circular:${rest}:retrans=${target}"
-                else
-                    token="--lua-desync=circular:retrans=${target}"
-                fi
-                ;;
-        esac
-        out="${out:+$out }$token"
-    done
-    IFS="$old_ifs"
-    printf '%s' "$out"
-}
-
-printf "\n--- ensure_circular_retrans ---\n"
-
-# (a) existing retrans=2 becomes retrans=1
-INPUT_RT1="--lua-desync=circular:fails=3:retrans=2:time=60:key=rkn_tcp:nld=2"
-RESULT_RT1=$(ensure_circular_retrans "$INPUT_RT1" 1)
-assert_contains "retrans: 2 -> 1"                "retrans=1"  "$RESULT_RT1"
-assert_not_contains "retrans: removes old retrans=2" "retrans=2" "$RESULT_RT1"
-assert_contains "retrans: preserves fails"       "fails=3"    "$RESULT_RT1"
-assert_contains "retrans: preserves nld"         "nld=2"      "$RESULT_RT1"
-
-# (b) circular without retrans gains retrans=1
-INPUT_RT2="--lua-desync=circular:fails=3:time=60:key=yt_tcp"
-RESULT_RT2=$(ensure_circular_retrans "$INPUT_RT2" 1)
-assert_contains "retrans: adds when absent"      "retrans=1"  "$RESULT_RT2"
-
-# (c) non-circular token untouched
-INPUT_RT3="--lua-desync=fake:payload=tls_client_hello:dir=out"
-RESULT_RT3=$(ensure_circular_retrans "$INPUT_RT3" 1)
-assert_eq "retrans: non-circular unchanged"      "$INPUT_RT3" "$RESULT_RT3"
-
-# (d) UDP-style circular (no retrans in source) — when NOT applied (flag off path
-#     skips it entirely) the token is simply never passed through, so we only
-#     assert the pass itself never invents retrans on a token we DON'T feed it:
-#     i.e. the gate is the caller's job. Here verify target=2 round-trips for the
-#     flag-off regeneration case (retrans stays 2).
-RESULT_RT4=$(ensure_circular_retrans "$INPUT_RT1" 2)
-assert_contains "retrans: target=2 round-trip (flag-off keeps 2)" "retrans=2" "$RESULT_RT4"
-
-# ==============================================================================
-# TEST: ensure_rkn_failure_detector (replicated from config_official.sh)
-# ==============================================================================
-
-# Функция берётся ИЗ ПОСТАВЛЯЕМОГО ФАЙЛА, а не переписывается сюда.
-#
-# Здесь лежала «local copy — kept in sync», и синхронной она не была: боевая
-# версия ТРЕБУЕТ имя детектора (`${2:?...}`, умолчание убрано намеренно — оно
-# указывало на функцию из удалённого z2k-detectors.lua), а копия продолжала
-# подставлять z2k_tls_stalled. Тест охранял поведение, от которого код отказался
-# (аудит 31.08.2026).
-#
-# Определение вложено в create_official_config, поэтому вырезаем ровно его.
-_SRC_CO="$(cd "$(dirname "$0")/.." && pwd)/lib/config_official.sh"
-[ -r "$_SRC_CO" ] || { echo "нет $_SRC_CO"; exit 1; }
-_FN_FD=$(awk '
-    /^[[:space:]]*ensure_rkn_failure_detector\(\)[[:space:]]*\{/ { inside=1 }
-    inside { print }
-    inside && /^    \}[[:space:]]*$/ { exit }
-' "$_SRC_CO")
-case "$_FN_FD" in
-    *detector_name*) : ;;
-    *) echo "не удалось вырезать ensure_rkn_failure_detector"; exit 1 ;;
-esac
-eval "$_FN_FD"
-
-# Local copy of ensure_circular_tcp_inseq — kept in sync with
-# lib/config_official.sh (added 2026-04-29 commit 4c852f5). Production
-# enforces inseq=18000 on rkn_tcp/yt_tcp/gv_tcp circular tokens to close
-# the standard_success_detector race against TSPU 12-18KB byte-gate.
-ensure_circular_tcp_inseq() {
-    local input="$1"
-    local target="${2:-18000}"
-    local out=""
-    local token=""
-    local opts=""
-    local part=""
-    local rest=""
-    local old_ifs="$IFS"
-
-    for token in $input; do
-        case "$token" in
-            --lua-desync=circular:*)
-                opts="${token#--lua-desync=circular:}"
-                rest=""
-                IFS=':'
-                for part in $opts; do
-                    case "$part" in
-                        inseq=*) ;;
-                        *) rest="${rest:+$rest:}$part" ;;
-                    esac
-                done
-                IFS="$old_ifs"
-                if [ -n "$rest" ]; then
-                    token="--lua-desync=circular:${rest}:inseq=${target}"
-                else
-                    token="--lua-desync=circular:inseq=${target}"
-                fi
-                ;;
-        esac
-        out="${out:+$out }$token"
-    done
-    IFS="$old_ifs"
-    printf '%s' "$out"
-}
-
-# Local copy of ensure_circular_arg_set — kept in sync with
-# lib/config_official.sh. Generic helper appending value-form (arg=val)
-# OR flag-form (bare arg) to circular tokens. Idempotent for both forms.
-ensure_circular_arg_set() {
-    local input="$1"
-    local arg_name="$2"
-    local arg_value="$3"
-    local out=""
-    local token=""
-    for token in $input; do
-        case "$token" in
-            --lua-desync=circular:*)
-                case "$token" in
-                    *":${arg_name}="*) ;;
-                    *":${arg_name}:"*) ;;
-                    *":${arg_name}") ;;
-                    *)
-                        if [ -n "$arg_value" ]; then
-                            token="${token}:${arg_name}=${arg_value}"
-                        else
-                            token="${token}:${arg_name}"
-                        fi
-                        ;;
-                esac
-                ;;
-        esac
-        out="${out:+$out }$token"
-    done
-    printf '%s' "$out"
-}
-
-printf "\n--- ensure_circular_arg_set ---\n"
-
-# Test: adds key=value pair when absent
-INPUT_AS1="--filter-tcp=443 --lua-desync=circular:fails=3:key=rkn_tcp:nld=2"
-RESULT_AS1=$(ensure_circular_arg_set "$INPUT_AS1" "success_detector" "z2k_http_success_positive_only")
-assert_contains "arg_set: appends success_detector" "success_detector=z2k_http_success_positive_only" "$RESULT_AS1"
-
-# Test: idempotent if value-form already present
-INPUT_AS2="--lua-desync=circular:fails=3:success_detector=z2k_existing:key=test"
-RESULT_AS2=$(ensure_circular_arg_set "$INPUT_AS2" "success_detector" "z2k_http_success_positive_only")
-SD_COUNT=$(printf '%s' "$RESULT_AS2" | grep -o "success_detector=" | wc -l | tr -d ' ')
-assert_eq "arg_set: no duplication when present" "1" "$SD_COUNT"
-assert_contains "arg_set: existing value preserved" "success_detector=z2k_existing" "$RESULT_AS2"
-
-# Test: flag-style arg (empty value) appends bare arg name
-INPUT_AS3="--lua-desync=circular:fails=3:key=yt_tcp"
-RESULT_AS3=$(ensure_circular_arg_set "$INPUT_AS3" "no_http_redirect" "")
-assert_contains "arg_set: flag arg appended" ":no_http_redirect" "$RESULT_AS3"
-assert_not_contains "arg_set: flag arg has no =value" "no_http_redirect=" "$RESULT_AS3"
-
-# Test: idempotent for flag-form at end of token (regression for v3.6 review)
-INPUT_AS5_END="--lua-desync=circular:fails=3:key=yt_tcp:no_http_redirect"
-RESULT_AS5_END=$(ensure_circular_arg_set "$INPUT_AS5_END" "no_http_redirect" "")
-NHR_END=$(printf '%s' "$RESULT_AS5_END" | grep -o "no_http_redirect" | wc -l | tr -d ' ')
-assert_eq "arg_set: no duplication of flag-form at token end" "1" "$NHR_END"
-
-# Test: idempotent for flag-form in middle of token
-INPUT_AS5_MID="--lua-desync=circular:fails=3:no_http_redirect:key=yt_tcp"
-RESULT_AS5_MID=$(ensure_circular_arg_set "$INPUT_AS5_MID" "no_http_redirect" "")
-NHR_MID=$(printf '%s' "$RESULT_AS5_MID" | grep -o "no_http_redirect" | wc -l | tr -d ' ')
-assert_eq "arg_set: no duplication of flag-form in token middle" "1" "$NHR_MID"
-
-# Test: non-circular tokens unchanged
-INPUT_AS4="--lua-desync=fake:payload=tls_client_hello"
-RESULT_AS4=$(ensure_circular_arg_set "$INPUT_AS4" "success_detector" "X")
-assert_eq "arg_set: non-circular unchanged" "$INPUT_AS4" "$RESULT_AS4"
-
-printf "\n--- ensure_rkn_failure_detector (Этап 2 — functional) ---\n"
-
-# Injects :failure_detector=<name> onto the circular token only.
-INPUT_FD1="--filter-tcp=443 --lua-desync=circular:fails=3:key=rkn_tcp:nld=2 --lua-desync=fake:strategy=1"
-RESULT_FD1=$(ensure_rkn_failure_detector "$INPUT_FD1" "z2k_silent_drop_detector")
-assert_contains "rkn_fd: circular base preserved" "circular:fails=3:key=rkn_tcp:nld=2" "$RESULT_FD1"
-assert_not_contains "rkn_fd: fake token untouched" "strategy=1:failure_detector" "$RESULT_FD1"
-
-# Имя детектора ОБЯЗАТЕЛЬНО: умолчания больше нет, и это не придирка. Прежнее
-# умолчание указывало на функцию из удалённого z2k-detectors.lua, то есть тихо
-# довело бы до движка несуществующее имя — error() на каждом пакете при зелёной
-# службе. Проверяем, что вызов без имени падает, а не молча что-то подставляет.
-INPUT_FD2="--lua-desync=circular:fails=3:key=rkn_tcp:nld=2"
-if RESULT_FD2=$(ensure_rkn_failure_detector "$INPUT_FD2" 2>/dev/null); then
-    assert_contains "rkn_fd: вызов без имени детектора обязан падать" "ДОЛЖЕН БЫЛ УПАСТЬ" "$RESULT_FD2"
-else
-    TESTS_PASSED=$((TESTS_PASSED + 1))
-    printf "[PASS] %s\n" "rkn_fd: вызов без имени детектора падает, а не подставляет умолчание"
-fi
-
-# Idempotent — an existing failure_detector= is preserved, not duplicated.
-INPUT_FD4="--lua-desync=circular:fails=3:failure_detector=z2k_existing:key=rkn_tcp"
-RESULT_FD4=$(ensure_rkn_failure_detector "$INPUT_FD4" "z2k_silent_drop_detector")
-FD_COUNT=$(printf '%s' "$RESULT_FD4" | grep -o "failure_detector=" | wc -l | tr -d ' ')
-assert_eq "rkn_fd: no duplication when present" "1" "$FD_COUNT"
-assert_contains "rkn_fd: existing value preserved" "failure_detector=z2k_existing" "$RESULT_FD4"
-
-# No circular token → nothing injected.
-INPUT_FD3="--lua-desync=fake:payload=tls_client_hello --lua-desync=send:strategy=2"
-RESULT_FD3=$(ensure_rkn_failure_detector "$INPUT_FD3")
-assert_not_contains "rkn_fd: no circular -> no injection" "failure_detector=" "$RESULT_FD3"
-
-printf "\n--- ensure_circular_tcp_inseq ---\n"
-
-# Test: adds inseq=18000 to circular without one
-INPUT_IS1="--filter-tcp=443 --lua-desync=circular:fails=3:key=rkn_tcp:nld=2 --lua-desync=fake:strategy=1"
-RESULT_IS1=$(ensure_circular_tcp_inseq "$INPUT_IS1" 18000)
-assert_contains "inseq: adds 18000 to circular" "inseq=18000" "$RESULT_IS1"
-
-# Test: overrides existing inseq (e.g. default 4096)
-INPUT_IS2="--lua-desync=circular:fails=3:inseq=4096:key=yt_tcp:nld=2"
-RESULT_IS2=$(ensure_circular_tcp_inseq "$INPUT_IS2" 18000)
-IS_COUNT=$(printf '%s' "$RESULT_IS2" | grep -o "inseq=" | wc -l | tr -d ' ')
-assert_eq "inseq: no duplication after override" "1" "$IS_COUNT"
-assert_contains "inseq: replaced with 18000" "inseq=18000" "$RESULT_IS2"
-assert_not_contains "inseq: old 4096 removed" "inseq=4096" "$RESULT_IS2"
-
-# Test: non-circular tokens are not modified
-INPUT_IS3="--filter-tcp=443 --lua-desync=fake:payload=tls_client_hello"
-RESULT_IS3=$(ensure_circular_tcp_inseq "$INPUT_IS3" 18000)
-assert_eq "inseq: non-circular unchanged" "$INPUT_IS3" "$RESULT_IS3"
-
-# Test: handles multiple circular tokens (extra defensiveness)
-INPUT_IS4="--lua-desync=circular:fails=3:key=a --new --lua-desync=circular:fails=2:key=b"
-RESULT_IS4=$(ensure_circular_tcp_inseq "$INPUT_IS4" 18000)
-IS_COUNT4=$(printf '%s' "$RESULT_IS4" | grep -o "inseq=18000" | wc -l | tr -d ' ')
-assert_eq "inseq: applied to all circular tokens" "2" "$IS_COUNT4"
-
-# ==============================================================================
-# TEST: generate_nfqws2_opt_from_strategies (full integration)
-# We must override the hardcoded paths inside the function.
-# Since paths are local to the function, we create symlinks in /opt or skip
-# if we cannot. Instead, we test the Austerus mode which is self-contained.
-# ==============================================================================
-
-# The product DEFAULT is now pure-native detectors (Z2K_NATIVE_DETECTORS unset/1
-# -> custom failure/success detectors stripped). The integration assertions below
-# validate the LEGACY custom-detector wiring (ensure_*_detector / Этапы 2-4),
-# which is now the opt-out path, so force custom mode for them. run_generator's
-# subshell inherits this exported env. The native default is asserted separately
-# at the end of this file (see "pure-native default" block).
-export Z2K_NATIVE_DETECTORS=0
-
 printf "\n--- Austerus mode removed (all_tcp443) ---\n"
 
 # Режим Austerusj снят 2026-08-04. Раньше здесь лежал тест, который ничего не
@@ -552,12 +273,11 @@ run_generator() {
     echo "--filter-tcp=443 --filter-l7=tls --lua-desync=circular:fails=3:time=60:key=rkn_tcp --lua-desync=fake:payload=tls_client_hello:dir=out:blob=fake_default_tls:repeats=6:strategy=1" \
         > "$root/extra_strats/TCP/RKN/Strategy.txt"
     printf '%s\n' "$cfg" > "$root/config"
-    # Детектор z2k_fail_tls_alert проводится в rkn_tcp только если lua-файл
-    # реально лежит на диске (иначе движок падал бы в error() на каждом
-    # пакете). Мок обязан повторять установленную систему, иначе тесты
-    # проверяют не ту ветку.
+    # Рантайм обрыва на 16 КБ проводится в rkn_tcp только если lua-файл реально
+    # лежит на диске (иначе движок падал бы в error() на каждом пакете). Мок
+    # обязан повторять установленную систему.
     mkdir -p "$root/lua"
-    cp "$SCRIPT_DIR/files/lua/z2k-alert.lua" "$root/lua/" 2>/dev/null || true
+    cp "$SCRIPT_DIR/files/lua/z2k-tcp16.lua" "$root/lua/" 2>/dev/null || true
     [ -n "$extra_cb" ] && eval "$extra_cb \"$root\""
     ( ZAPRET2_DIR="$root" generate_nfqws2_opt_from_strategies 2>/dev/null )
     rm -rf "$root"
@@ -584,55 +304,6 @@ config_profile_line() {
         | grep -F "$2" | head -1
 }
 
-printf "\n--- Z2K_USE_MID_STREAM_DETECTOR: explicit OFF (=0) ---\n"
-
-# Per Mark 2026-05-02 policy "все нововведения по умолчанию включены"
-# default flipped to 1. Test explicit Z2K_USE_MID_STREAM_DETECTOR=0
-# чтобы opt-out path работал — rkn_tcp возвращается к master-compatible
-# layout (--in-range=-s5556 + z2k_tls_stalled).
-OUT_MS_OFF=$(run_generator "ms-off" "Z2K_USE_MID_STREAM_DETECTOR=0" "")
-RKN_ARM_OFF=$(get_rkn_tcp_arm_line "$OUT_MS_OFF")
-
-assert_contains "ms flag=0: rkn_tcp arm emitted" \
-    "key=rkn_tcp" "$RKN_ARM_OFF"
-# Окно больше не константа флага: инвариант «окно выше порога inseq» (см.
-# блок ниже) поднимает его до inseq+1500 в обеих позициях флага. Для rkn_tcp
-# порог всегда 26000, значит окно всегда 27500 — иначе полоса, в которой
-# срабатывает успех по входящим, пуста. Флаг продолжает управлять вторым
-# рычагом пакета — NFQWS2_TCP_PKT_IN (проверяется ниже).
-assert_contains "ms flag=0: окно rkn_tcp держит инвариант (inseq 26000 + 1500)" \
-    "--in-range=-s27500" "$RKN_ARM_OFF"
-assert_not_contains "ms flag=0: старое окно ниже порога не вернулось" \
-    "--in-range=-s5556" "$RKN_ARM_OFF"
-# Old detector names не должны быть primary в config-string. Они
-# доступны через chain в lua, не через config text.
-assert_not_contains "ms flag=0: no z2k_tls_stalled as primary" \
-    "failure_detector=z2k_tls_stalled" "$RKN_ARM_OFF"
-assert_not_contains "ms flag=0: no z2k_mid_stream_stall as primary" \
-    "failure_detector=z2k_mid_stream_stall" "$RKN_ARM_OFF"
-
-printf "\n--- Z2K_USE_MID_STREAM_DETECTOR: bundle flag (default ON) ---\n"
-
-# Flag opt-in: rkn_tcp gets the bundle — --in-range=-s20000 paired
-# with failure_detector=z2k_mid_stream_stall. Both knobs MUST move
-# together; half-state assertions below catch a mistaken landing.
-OUT_MS_ON=$(run_generator "ms-on" "Z2K_USE_MID_STREAM_DETECTOR=1" "")
-RKN_ARM_ON=$(get_rkn_tcp_arm_line "$OUT_MS_ON")
-
-assert_contains "ms flag=1: rkn_tcp arm emitted" \
-    "key=rkn_tcp" "$RKN_ARM_ON"
-assert_contains "ms flag=1: окно rkn_tcp держит инвариант (inseq 26000 + 1500)" \
-    "--in-range=-s27500" "$RKN_ARM_ON"
-# Half-state guards on flag=1 — bundle byte-cap должен land, но primary
-# detector один и тот же независимо от flag (chain в lua делегирует к
-# mid_stream_stall когда payload TLS).
-assert_not_contains "ms flag=1: no leftover s5556 on rkn_tcp arm" \
-    "--in-range=-s5556" "$RKN_ARM_ON"
-assert_not_contains "ms flag=1: no z2k_tls_stalled as primary" \
-    "failure_detector=z2k_tls_stalled" "$RKN_ARM_ON"
-assert_not_contains "ms flag=1: no z2k_mid_stream_stall as primary" \
-    "failure_detector=z2k_mid_stream_stall" "$RKN_ARM_ON"
-
 printf "\n--- окно входящих выше порога inseq ---\n"
 
 # Порог inseq ставится в config_official.sh, а окно `--in-range=-sN` вставляют
@@ -656,7 +327,7 @@ _seed_tls_circulars() {
     echo "--filter-tcp=443 --filter-l7=tls --payload=tls_client_hello --lua-desync=circular:fails=3:time=60:key=gv_tcp --lua-desync=fake:payload=tls_client_hello:dir=out:blob=fake_default_tls:strategy=1" \
         > "$root/extra_strats/TCP/YT_GV/Strategy.txt"
 }
-OUT_RANGE=$(run_generator "in-range-vs-inseq" "Z2K_USE_MID_STREAM_DETECTOR=1" "_seed_tls_circulars")
+OUT_RANGE=$(run_generator "in-range-vs-inseq" "" "_seed_tls_circulars")
 _flat_range=$(printf '%s\n' "$OUT_RANGE" | awk -f "$SCRIPT_DIR/tests/lib/nfqws2_flatten.awk")
 
 check_range_above_inseq() {
@@ -726,55 +397,6 @@ case $(printf '%s\n' "$_flat_range" | grep -F "key=rkn_tcp" | head -1) in
         TESTS_PASSED=$((TESTS_PASSED + 1))
         printf "[PASS] rkn_tcp: l7 остался чистым tls\n" ;;
 esac
-
-printf "\n--- Z2K_USE_MID_STREAM_DETECTOR: NFQWS2_TCP_PKT_IN bundle ---\n"
-
-# Third bundle knob: NFQWS2_TCP_PKT_IN drives the iptables connbytes
-# range, which in turn caps how many incoming packets nfqws2 ever sees
-# per connection. With the master-compatible 10 (~7KB visibility), the
-# byte-window detector and the success_detector=inseq=18000 are both
-# blind past handshake. Bumping to 30 (~22-44KB) is required for the
-# bundle to do anything; testing both flag positions catches a stale
-# heredoc constant or a missed call site.
-#
-# create_official_config writes the config file AND has to see the
-# flag in the existing file to choose the bundle value, so this test
-# materializes the entire create_official_config pass via the helper.
-test_pkt_in_under_flag() {
-    local flag="$1" expected="$2" desc_suffix="$3"
-    local root="${MOCK_DIR}/pkt-in-$flag"
-    rm -rf "$root"
-    mkdir -p "$root/extra_strats/TCP/YT" \
-             "$root/extra_strats/TCP/RKN" \
-             "$root/extra_strats/UDP/YT" \
-             "$root/lists"
-    echo "youtube.com" > "$root/extra_strats/TCP/YT/List.txt"
-    echo "googlevideo.com" > "$root/extra_strats/TCP/YT_GV/List.txt"
-    echo "youtube.com" > "$root/extra_strats/UDP/YT/List.txt"
-    echo "rutracker.org" > "$root/extra_strats/TCP/RKN/List.txt"
-    echo "whitelisted.example.com" > "$root/lists/whitelist.txt"
-    echo "--filter-tcp=443 --filter-l7=tls --lua-desync=circular:fails=3:time=60:key=rkn_tcp --lua-desync=fake:strategy=1" \
-        > "$root/extra_strats/TCP/RKN/Strategy.txt"
-    cat > "$root/config" <<EOF
-ENABLED=1
-Z2K_USE_MID_STREAM_DETECTOR=$flag
-EOF
-    ( ZAPRET2_DIR="$root" create_official_config "$root/config" >/dev/null 2>&1 )
-    local emitted_pkt_in
-    emitted_pkt_in=$(grep -E '^NFQWS2_TCP_PKT_IN=' "$root/config" | head -1)
-    assert_contains "ms flag=$flag: $desc_suffix" \
-        "NFQWS2_TCP_PKT_IN=\"$expected\"" "$emitted_pkt_in"
-    # Persist round-trip: new config must carry the flag forward so a
-    # follow-up regen doesn't silently revert it.
-    local persisted_flag
-    persisted_flag=$(grep -E '^Z2K_USE_MID_STREAM_DETECTOR=' "$root/config" | head -1)
-    assert_contains "ms flag=$flag: persisted in regenerated config" \
-        "Z2K_USE_MID_STREAM_DETECTOR=$flag" "$persisted_flag"
-    rm -rf "$root"
-}
-
-test_pkt_in_under_flag "0" "10" "NFQWS2_TCP_PKT_IN stays at 10"
-test_pkt_in_under_flag "1" "50" "NFQWS2_TCP_PKT_IN поднят до 50 (замер 2026-08-18: при 30 успех не срабатывал ни разу)"
 
 printf "\n--- DISABLE_IPV6: preserved across config regen (user request 2026-06-19) ---\n"
 
@@ -944,151 +566,72 @@ EOF
 test_padencap_under_flag "0" "0" "rkn_tcp без padencap"
 test_padencap_under_flag "1" "1" "rkn_tcp с padencap"
 
-printf "\n--- HTTP mid_stream_stall wiring под Z2K_USE_MID_STREAM_DETECTOR ---\n"
+printf "\n--- штатные детекторы, circular по документации (решение 10.09.2026) ---\n"
+# Своих детекторов нет: ни failure_detector=, ни success_detector= ни в одном
+# пуле. Параметры circular — из docs/manual.md апстрима (standard_*_detector):
+# retrans=3, maxseq=32768, inseq=4096, плюс reset (RST ретрансмиттеру после
+# фиксации неудачи; в автохостлисте у bol-van это умолчание). Окно входящих —
+# -s5556 (inseq 4096 + 1460). QUIC: udp_in=1 по документации, udp_out=5 — по
+# замеру 19.08.2026 (см. комментарий у quic_udp).
+OUT_DOC=$(run_generator "docalign" "" "_seed_tls_circulars")
+_flat_doc=$(printf '%s\n' "$OUT_DOC" | awk -f "$SCRIPT_DIR/tests/lib/nfqws2_flatten.awk")
+assert_not_contains "нет своих детекторов неудач"  "failure_detector=" "$_flat_doc"
+assert_not_contains "нет своих детекторов удач"    "success_detector=" "$_flat_doc"
+assert_not_contains "нет z2k_fail_*"               "z2k_fail_"         "$_flat_doc"
+assert_not_contains "нет сторожа обрыва"           "z2k_stall_watch"   "$_flat_doc"
+for _k in rkn_tcp yt_tcp gv_tcp; do
+    _line=$(printf '%s\n' "$_flat_doc" | grep -F "key=$_k" | head -1)
+    _circ=$(printf '%s\n' "$_line" | tr ' ' '\n' | grep -- '--lua-desync=circular:' | head -1)
+    assert_contains     "$_k: retrans=3 (manual: «не менее retrans ретрансмиссий», по умолчанию 3)" "retrans=3"    "$_circ"
+    assert_contains     "$_k: maxseq=32768"  "maxseq=32768" "$_circ"
+    assert_contains     "$_k: inseq=4096"    "inseq=4096"   "$_circ"
+    assert_contains     "$_k: reset"         ":reset"       "$_circ"
+    assert_contains     "$_k: fails=3"       "fails=3"      "$_circ"
+    assert_not_contains "$_k: нет старых retrans=2"    "retrans=2"    "$_circ"
+    assert_not_contains "$_k: нет старых maxseq=16384" "maxseq=16384" "$_circ"
+    assert_contains     "$_k: окно входящих -s5556"    "--in-range=-s5556" "$_line"
+done
+_yt_circ=$(printf '%s\n' "$_flat_doc" | grep -F "key=yt_tcp" | head -1 | tr ' ' '\n' | grep -- '--lua-desync=circular:' | head -1)
+assert_contains "yt_tcp: окно счётчика 300 (замер ТВ 25-26.08) сохранено" "time=300" "$_yt_circ"
+_quic=$(printf '%s\n' "$_flat_doc" | grep -F "key=yt_quic" | head -1)
+assert_contains     "yt_quic: udp_in=1 по документации" "udp_in=1"  "$_quic"
+assert_contains     "yt_quic: udp_out=5 по замеру"      "udp_out=5" "$_quic"
+assert_not_contains "yt_quic: нет детектора молчания"   "quic_silence" "$_quic"
+_http=$(printf '%s\n' "$_flat_doc" | grep -F "key=http_rkn" | head -1)
+assert_not_contains "http_rkn: без своей обёртки" "failure_detector=" "$_http"
+assert_contains     "http_rkn: fails=3"           "circular:fails=3" "$_http"
 
-# http_rkn primary failure_detector — z2k_silent_drop_detector (2026-05-03,
-# AlfiX silent_drop_detector port). Chain делегирует:
-# silent_drop → http_mid_stream_stall → tls_alert_fatal — внутри lua, не
-# через config strings. Так что primary всегда z2k_silent_drop_detector
-# независимо от Z2K_USE_MID_STREAM_DETECTOR. Mid_stream remain активным
-# через chain delegation (всегда), flag регулирует только rkn_tcp / yt_tcp /
-# gv_tcp arms (там mid_stream остаётся прямым primary).
-test_http_detector_under_flag() {
-    local flag="$1"
-    local root="${MOCK_DIR}/http-det-$flag"
-    rm -rf "$root"
-    mkdir -p "$root/extra_strats/TCP/YT" "$root/extra_strats/TCP/RKN" \
-             "$root/extra_strats/UDP/YT" "$root/lists"
-    echo "youtube.com" > "$root/extra_strats/TCP/YT/List.txt"
-    echo "googlevideo.com" > "$root/extra_strats/TCP/YT_GV/List.txt"
-    echo "youtube.com" > "$root/extra_strats/UDP/YT/List.txt"
-    echo "rutracker.org" > "$root/extra_strats/TCP/RKN/List.txt"
-    echo "whitelisted.example.com" > "$root/lists/whitelist.txt"
-    cat > "$root/config" <<EOF
-ENABLED=1
-Z2K_USE_MID_STREAM_DETECTOR=$flag
-EOF
-    ( ZAPRET2_DIR="$root" create_official_config "$root/config" >/dev/null 2>&1 )
-    local http_arm
-    http_arm=$(grep -F 'key=http_rkn' "$root/config" | head -1)
+# Выключатель RST: Z2K_CIRCULAR_RESET=0 снимает reset, остальное на месте.
+OUT_NORST=$(run_generator "docalign-norst" "Z2K_CIRCULAR_RESET=0" "_seed_tls_circulars")
+_rkn_norst=$(printf '%s\n' "$OUT_NORST" | awk -f "$SCRIPT_DIR/tests/lib/nfqws2_flatten.awk" | grep -F "key=rkn_tcp" | head -1 | tr ' ' '\n' | grep -- '--lua-desync=circular:' | head -1)
+assert_not_contains "Z2K_CIRCULAR_RESET=0: reset снят"      ":reset"   "$_rkn_norst"
+assert_contains     "Z2K_CIRCULAR_RESET=0: retrans=3 остался" "retrans=3" "$_rkn_norst"
 
-    assert_contains "ms flag=$flag: http_rkn arm emitted" \
-        "key=http_rkn" "$http_arm"
-    # Primary всегда silent_drop_detector — chain делегирует внутри lua.
-    # Other detectors не должны быть primary в config-string (они только
-    # внутри chain через runtime call, не текстом в conf).
-    assert_not_contains "ms flag=$flag: http_rkn no http_mid_stream as primary" \
-        "failure_detector=z2k_http_mid_stream_stall" "$http_arm"
-    assert_not_contains "ms flag=$flag: http_rkn no tls_alert as primary" \
-        "failure_detector=z2k_tls_alert_fatal" "$http_arm"
-    rm -rf "$root"
+# Правленый руками Strategy.txt с чужим детектором и старыми порогами
+# приводится к тому же: имя функции, которой нет на диске, роняет движок.
+_seed_hand_edited() {
+    local root="$1"
+    echo "--filter-tcp=443 --filter-l7=tls --lua-desync=circular:fails=3:retrans=1:maxseq=16384:inseq=26000:time=60:key=rkn_tcp:failure_detector=z2k_fail_tls_alert --lua-desync=fake:payload=tls_client_hello:dir=out:blob=fake_default_tls:strategy=1" \
+        > "$root/extra_strats/TCP/RKN/Strategy.txt"
 }
+OUT_HAND=$(run_generator "docalign-hand" "" "_seed_hand_edited")
+_rkn_hand=$(get_rkn_tcp_arm_line "$OUT_HAND" | tr ' ' '\n' | grep -- '--lua-desync=circular:' | head -1)
+assert_not_contains "ручной Strategy.txt: чужой детектор срезан"   "failure_detector=" "$_rkn_hand"
+assert_not_contains "ручной Strategy.txt: inseq=26000 снят"        "inseq=26000"       "$_rkn_hand"
+assert_contains     "ручной Strategy.txt: inseq=4096 поставлен"    "inseq=4096"        "$_rkn_hand"
+assert_contains     "ручной Strategy.txt: retrans=3 поставлен"     "retrans=3"         "$_rkn_hand"
+_dups=$(printf '%s' "$_rkn_hand" | grep -o "retrans=" | wc -l | tr -d ' ')
+assert_eq "ручной Strategy.txt: retrans не задвоен" "1" "$_dups"
 
-# Both flag=0 and flag=1 should result in z2k_silent_drop_detector primary
-# для http_rkn arm. Flag effect остаётся в rkn_tcp/yt_tcp/gv_tcp armах
-# (через ensure_rkn_failure_detector / прямые detector swaps).
-test_http_detector_under_flag "0"
-test_http_detector_under_flag "1"
-
-
-# ==============================================================================
-# CLEANUP AND REPORT
-# ==============================================================================
-
-printf "\n--- pure-native default (Z2K_NATIVE_DETECTORS=1) ---\n"
-# The shipped DEFAULT: custom failure/success detectors + no_http_redirect are
-# STRIPPED from every TCP pool, leaving pure bol-van standard detectors. Native
-# circular tuning (inseq=/reset/in-range) is KEPT.
-export Z2K_NATIVE_DETECTORS=1
-OUT_NATIVE=$(run_generator "native-default" "" "")
-export Z2K_NATIVE_DETECTORS=0
-RKN_ARM_NATIVE=$(get_rkn_tcp_arm_line "$OUT_NATIVE")
-assert_contains     "native: rkn_tcp arm emitted"               "key=rkn_tcp"          "$RKN_ARM_NATIVE"
-# 2026-08-18: контракт уточнён. Кастомная библиотека детекторов по-прежнему
-# срезается целиком, но ПОСЛЕ среза на rkn_tcp ставится ровно одна обёртка —
-# z2k_fail_tls_alert. Она не заменяет штатный детектор, а вызывает его и
-# добавляет два измеренных на боевом роутере отличия: ретрансмит считается
-# только на ClientHello (иначе потеря пакета в живой сессии уводит рабочую
-# страту) и фатальный TLS-алерт до ServerHello считается провалом (иначе
-# нерабочая страта не ротируется вовсе — событий у детектора нет).
-assert_contains     "native: rkn_tcp несёт обёртку z2k_fail_tls_alert" \
-                    "failure_detector=z2k_fail_tls_alert" "$RKN_ARM_NATIVE"
-assert_not_contains "native: старая библиотека детекторов не вернулась" \
-                    "failure_detector=z2k_silent_drop_detector" "$RKN_ARM_NATIVE"
-assert_not_contains "native: rkn_tcp has NO success_detector"   "success_detector="    "$RKN_ARM_NATIVE"
-assert_not_contains "native: rkn_tcp has NO no_http_redirect"   "no_http_redirect"     "$RKN_ARM_NATIVE"
-assert_contains     "native: rkn_tcp keeps native inseq="       "inseq="               "$RKN_ARM_NATIVE"
-
-# ==============================================================================
-# bol-van doc-alignment (2026-06-08) + Discord-voice Flowseal "5K ping" fix.
-# Strictly-per-docs: reset on every pool, retrans=3 on TCP TLS, fails=3 on the
-# game/http pools; discord voice strategy=1 == Flowseal fix (issue #12557).
-# ==============================================================================
-printf "\n--- doc-alignment: reset / retrans=3 / fails=3 / discord strategy=1 ---\n"
-OUT_DOC=$(run_generator "docalign" "")
-RKN_ARM_DOC=$(get_rkn_tcp_arm_line "$OUT_DOC")
-HTTP_ARM_DOC=$(printf '%s\n' "$OUT_DOC" | grep -F 'key=http_rkn' | head -1)
-DISCORD_ARM_DOC=$(printf '%s\n' "$OUT_DOC" | grep -F 'key=discord_udp' | head -1)
-
-# rkn_tcp (TCP TLS): retrans 2 (r-54.1 revert from 3), NO reset, --in-range floor preserved.
-assert_contains     "docalign: rkn_tcp circular retrans=2"      "retrans=2"     "$RKN_ARM_DOC"
-assert_not_contains "docalign: rkn_tcp no stale retrans=3"      "retrans=3"     "$RKN_ARM_DOC"
-assert_not_contains "docalign: rkn_tcp circular NO reset"       ":reset"        "$RKN_ARM_DOC"
-assert_contains     "docalign: rkn_tcp --in-range>=floor"       "--in-range=-s" "$RKN_ARM_DOC"
-
-# http_rkn: fails 2→3 (r-54.1: inline reset removed).
-assert_contains     "docalign: http_rkn fails=3"                "circular:fails=3" "$HTTP_ARM_DOC"
-assert_not_contains "docalign: http_rkn no fails=2"             "fails=2"          "$HTTP_ARM_DOC"
-assert_not_contains "docalign: http_rkn NO reset"               ":reset"           "$HTTP_ARM_DOC"
-
-# discord_udp: NO reset (r-54.1).
-assert_not_contains "docalign: discord_udp circular NO reset"   ":reset"        "$DISCORD_ARM_DOC"
-
-# ОЧЕРЕДЬ ПЕРЕСОБРАНА 26.08.2026, и утверждение здесь поменялось вместе с ней.
-#
-# Сопоставление всех наших стратегий с первоисточниками (БД по Flowseal /
-# remittor / z4r) показало по дискорду две вещи. Первая: весь наш пул — порт
-# z4r, включая список портов и блоб quic_dbankcloud; у z4r на discord-пейлоаде
-# фейка ДВА (stun, затем dbankcloud), у нас при переносе остался один — потеря
-# восстановлена. Вторая: у Flowseal свой снимок живого дискорд-пакета
-# (ACTIVE_DISCORD_UDP), стратегий на нём у нас не было вовсе — они добавлены и
-# поставлены В НАЧАЛО очереди, чтобы ротация пробовала их первыми.
-#
-# Поэтому dbankcloud теперь не первый, а четвёртый, и это не регресс.
-assert_contains     "очередь дискорда начинается со снимка Flowseal" \
-                    "blob=active_discord_udp:repeats=6:strategy=1" "$DISCORD_ARM_DOC"
-assert_contains     "второй арм — тот же снимок с repeats=5 (их ALT13)" \
-                    "blob=active_discord_udp:repeats=5:strategy=2" "$DISCORD_ARM_DOC"
-assert_contains     "наш прежний первый стал четвёртым и цел" \
-                    "blob=quic_dbankcloud:repeats=10:strategy=4" "$DISCORD_ARM_DOC"
-# Потерянный при переносе фейк вернулся: у z4r он идёт ПЕРЕД dbankcloud и
-# только на discord-пейлоаде.
-assert_contains     "восстановлен первый фейк z4r (stun на discord-пейлоаде)" \
-                    "fake:payload=discord_ip_discovery:blob=stun:repeats=10:strategy=4" "$DISCORD_ARM_DOC"
-# bol-van canon: tight start-of-flow cutoff + connbytes, NOT keepalive.
-# --out-range=-d4 = fake only on the first 4 data packets per flow (#1267
-# "n2 или d2 лучше"; tight cutoff = fewer packets faked = stream-safe). The
-# robustness lever is repeats (=10), NOT a wider cutoff. keepalive routed the
-# whole high-bitrate stream through NFQUEUE → MIPS CPU saturation → 5000-ping.
-assert_contains     "docalign: discord --out-range=-d4 (bol-van tight cutoff)" \
-                    "--out-range=-d4"                           "$DISCORD_ARM_DOC"
-assert_not_contains "docalign: discord no stale -d100 keepalive cutoff" \
-                    "-d100"                                     "$DISCORD_ARM_DOC"
-assert_not_contains "docalign: discord no --in-range (bol-van uses none)" \
-                    "--in-range"                                "$DISCORD_ARM_DOC"
-# payload gate = discovery/STUN signatures (NOT quic_initial — that's QUIC/443).
-assert_contains     "docalign: discord payload=discord_ip_discovery,stun" \
-                    "--payload=discord_ip_discovery,stun"       "$DISCORD_ARM_DOC"
-assert_not_contains "docalign: discord no stale quic_initial gate" \
-                    "--payload=quic_initial"                    "$DISCORD_ARM_DOC"
-
-# yt_quic 8/4 -> 3/5 (2026-08-19). Замер 1646 QUIC-потоков: при udp_in=8 порог
-# успеха лежит ВЫШЕ окна перехвата, успех недостижим (1 на 237 потоков), счётчик
-# неудач нечем сбросить — симуляция даёт 15 ротаций на здоровом трафике. Порог
-# успеха обязан быть ниже окна, это же сторожит tests/test_udp_detector_window.sh.
-YT_QUIC_DOC=$(printf '%s\n' "$OUT_DOC" | grep -F 'key=yt_quic' | head -1)
-assert_contains     "docalign: yt_quic udp_in=3 udp_out=5" "udp_in=3:udp_out=5:key=yt_quic" "$YT_QUIC_DOC"
-assert_not_contains "docalign: yt_quic без старого udp_in=8" "udp_in=8:" "$YT_QUIC_DOC"
+# NFQWS2_TCP_PKT_IN — окно входящих в пакетах — 10: детектору успеха нужно
+# inseq=4096 + пакет, десять — двойной запас; прежние 50 кормили сторож обрыва.
+_root_pkt="${MOCK_DIR}/pkt-in"; rm -rf "$_root_pkt"; mkdir -p "$_root_pkt/lists"
+printf 'ENABLED=1\n' > "$_root_pkt/config"
+( ZAPRET2_DIR="$_root_pkt" create_official_config "$_root_pkt/config" >/dev/null 2>&1 )
+assert_eq "NFQWS2_TCP_PKT_IN=10 в конфиге" 'NFQWS2_TCP_PKT_IN="10"' "$(grep -E '^NFQWS2_TCP_PKT_IN=' "$_root_pkt/config" | head -1)"
+assert_eq "Z2K_CIRCULAR_RESET переживает регенерацию (умолчание 1)" 'Z2K_CIRCULAR_RESET=1' "$(grep -E '^Z2K_CIRCULAR_RESET=' "$_root_pkt/config" | head -1)"
+assert_eq "Z2K_USE_MID_STREAM_DETECTOR больше не пишется" "" "$(grep -E '^Z2K_USE_MID_STREAM_DETECTOR=' "$_root_pkt/config" | head -1)"
+rm -rf "$_root_pkt"
 
 printf "\n--- corrupt pool Strategy.txt: fail closed, keep old config (field 2026-08-06) ---\n"
 

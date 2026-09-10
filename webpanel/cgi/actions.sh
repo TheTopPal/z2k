@@ -2267,6 +2267,51 @@ diag_is_complete() {
     printf '%s' "$1" | grep -q '=== end of diag ===' 2>/dev/null
 }
 
+# --- обрыв на 16 КБ (проба линии и её итог) ---
+#
+# Та же картина, что печатает диагностика (print_tcp16 в z2k-diag.sh), но в
+# JSON для карточки дашборда. Источник правды — файлы пробы, а не конфиг:
+# флаг state/tcp16.flag (1 — блок есть, 0 — нет, нет файла — не мерили),
+# отметка времени рядом, список сетей с блоком и карта «сеть → имя».
+# «В конфиге» — отдельное поле: расхождение флага и конфига и есть самая
+# частая болезнь этого механизма, её человеку надо видеть.
+_tcp16_count() {
+    awk '!/^#/ && NF {n++} END {print n + 0}' "$1" 2>/dev/null || echo 0
+}
+tcp16_status_json() {
+    local flag="${ZAPRET2_DIR}/state/tcp16.flag"
+    local f="" ts="" age="" in_cfg=false running=false
+    [ -s "$flag" ] && f=$(cat "$flag" 2>/dev/null)
+    case "$f" in 0|1) ;; *) f="" ;; esac
+    # Метка времени — только вместе с ответом: одна без другого означает, что
+    # проба идёт прямо сейчас.
+    if [ -n "$f" ] && [ -s "$flag.ts" ]; then
+        ts=$(cat "$flag.ts" 2>/dev/null)
+        case "$ts" in ''|*[!0-9]*) ts="" ;; *) age=$(( $(date +%s) - ts )) ;; esac
+    fi
+    grep -q -- '--lua-desync=z2k_sni_pick' "$CONFIG_FILE" 2>/dev/null && in_cfg=true
+    # Идёт ли проба: по процессу, а не по метке — метка появляется в конце.
+    pgrep -f 'z2k-tcp16-probe.sh' >/dev/null 2>&1 && running=true
+    printf '{"ok":true,"measured":'; json_string "$f"
+    printf ',"age":%s' "${age:-null}"
+    printf ',"nets_blocked":%s' "$(_tcp16_count "${ZAPRET2_DIR}/state/tcp16_asn.txt")"
+    printf ',"names":%s' "$(_tcp16_count "${ZAPRET2_DIR}/state/tcp16_sni.txt")"
+    printf ',"candidates":%s' "$(_tcp16_count "${ZAPRET2_DIR}/lists/sni_wl_candidates.txt")"
+    printf ',"in_config":%s,"running":%s}\n' "$in_cfg" "$running"
+}
+
+# Ручной запуск пробы — та же команда, что у планировщика в 03:30, без
+# аргументов: другой прогон ничего не доказывал бы. Идёт как задача с живым
+# логом; сама проба, если ответ сменил картину, пересобирает конфиг и
+# перезапускает сервис — панель это переживает как штатный обрыв.
+tcp16_probe_async() {
+    [ -r "${ZAPRET2_DIR}/z2k-tcp16-probe.sh" ] || return 3
+    if pgrep -f 'z2k-tcp16-probe.sh' >/dev/null 2>&1; then
+        return 4
+    fi
+    svc_action_async "Проба линии на обрыв 16 КБ" "sh \"${ZAPRET2_DIR}/z2k-tcp16-probe.sh\""
+}
+
 # --- rotator state (Phase 3) ---
 #
 # /opt/zapret2/extra_strats/cache/autocircular/state.tsv is a tab-separated

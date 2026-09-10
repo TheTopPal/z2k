@@ -33,7 +33,7 @@ printf 'x' > "$SB/files/fake/fake_default_tls.bin"
 # инстанс готовит блоб, штатный fake его отправляет, файла у блоба нет.
 cat > "$SB/config" <<CFG
 ENABLED=1
-NFQWS2_OPT="--filter-tcp=443 --hostlist=$SB/lists/rkn.txt --lua-desync=z2k_stall_watch:dir=in:cap=50:key=rkn_tcp:nld=2 --lua-desync=z2k_sni_pick:payload=tls_client_hello:dir=out:blob=z2k_ch:key=rkn_tcp:nld=2 --lua-desync=fake:payload=tls_client_hello:dir=out:blob=z2k_ch:optional:repeats=8:tcp_ts=-1000 --lua-desync=circular:fails=3:key=rkn_tcp:nld=2 --new"
+NFQWS2_OPT="--filter-tcp=443 --hostlist=$SB/lists/rkn.txt --lua-desync=z2k_sni_pick:payload=tls_client_hello:dir=out:blob=z2k_ch:key=rkn_tcp:nld=2 --lua-desync=fake:payload=tls_client_hello:dir=out:blob=z2k_ch:optional:repeats=8:tcp_ts=-1000 --lua-desync=circular:fails=3:key=rkn_tcp:nld=2 --new"
 CFG
 
 # Валидатор берёт конфиг ПЕРВЫМ АРГУМЕНТОМ, а каталог — из ZAPRET_BASE.
@@ -46,8 +46,8 @@ case "$OUT" in
 esac
 
 case "$OUT" in
-    *"Неизвестное lua-desync действие: 'z2k_stall_watch'"*) bad "z2k_stall_watch не в списке известных действий" ;;
-    *) ok "z2k_stall_watch известен валидатору" ;;
+    *"Неизвестное lua-desync действие: 'z2k_sni_pick'"*) bad "z2k_sni_pick не в списке известных действий" ;;
+    *) ok "z2k_sni_pick известен валидатору" ;;
 esac
 case "$OUT" in
     *"Неизвестное lua-desync действие: 'z2k_sni_pick'"*) bad "z2k_sni_pick не в списке известных действий" ;;

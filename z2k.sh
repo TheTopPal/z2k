@@ -1331,31 +1331,16 @@ download_init_script() {
     local lua_dir="${files_dir}/lua"
     mkdir -p "$lua_dir" || die "Не удалось создать $lua_dir"
 
-    # z2k-alert.lua — две поправки к штатному детектору неудач (замеры
-    # 2026-08-18): ретрансмит считается провалом только на ClientHello, и
-    # фатальный TLS-алерт до ServerHello тоже считается провалом. Профиль
-    # rkn_tcp ссылается на функцию по имени через failure_detector=, поэтому
-    # файл обязан приехать вместе с конфигом: без него движок падает в
-    # error() на каждом пакете профиля.
-    url="${GITHUB_RAW}/files/lua/z2k-alert.lua"
-    output="${lua_dir}/z2k-alert.lua"
+    # z2k-tcp16.lua — рантайм обхода обрыва на 16 КБ: подстановка белого имени
+    # по карте «сеть → имя», которую готовит проба. Профиль rkn_tcp ссылается
+    # на функцию по имени (z2k_sni_pick), поэтому файл обязан приехать вместе
+    # с конфигом: без него движок падает в error() на каждом пакете профиля.
+    url="${GITHUB_RAW}/files/lua/z2k-tcp16.lua"
+    output="${lua_dir}/z2k-tcp16.lua"
     if z2k_fetch "$url" "$output"; then
-        print_success "Загружено: files/lua/z2k-alert.lua"
+        print_success "Загружено: files/lua/z2k-tcp16.lua"
     else
-        die "Ошибка загрузки files/lua/z2k-alert.lua"
-    fi
-
-    # z2k-quic-silence.lua — детектор неудач для QUIC. Штатный там неприменим:
-    # он считает провалом «отослано много, принято мало», а мёртвый QUIC-поток
-    # шлёт МЕНЬШЕ пакетов, чем живой (браузер не ретрансмитит Initial, а уходит
-    # на TCP). Детектор ждёт ответа по таймеру. Профиль yt_quic ссылается на
-    # функцию по имени, поэтому файл обязателен так же, как z2k-alert.lua.
-    url="${GITHUB_RAW}/files/lua/z2k-quic-silence.lua"
-    output="${lua_dir}/z2k-quic-silence.lua"
-    if z2k_fetch "$url" "$output"; then
-        print_success "Загружено: files/lua/z2k-quic-silence.lua"
-    else
-        die "Ошибка загрузки files/lua/z2k-quic-silence.lua"
+        die "Ошибка загрузки files/lua/z2k-tcp16.lua"
     fi
 
     # Phase 6: anti-ТСПУ fool extensions (z2k_dynamic_ttl and friends).

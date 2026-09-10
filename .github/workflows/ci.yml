@@ -163,7 +163,7 @@ jobs:
 
       - name: Install shellcheck and lua
         # lua is needed because tests/run_all.sh now picks up
-        # tests/test_http_classifier.sh which invokes a lua mock-harness.
+        # tests/test_tcp16_lua.sh which invokes a lua mock-harness.
         # Without lua here, the wrapper would skip silently (per its
         # graceful-skip semantics for local devs without lua).
         run: sudo apt-get update && sudo apt-get install -y shellcheck lua5.3
@@ -416,7 +416,7 @@ jobs:
           fetch-depth: 0
 
       - name: Install lua
-        # test_http_classifier.sh гоняет lua-харнесс. Без lua набор молча
+        # test_tcp16_lua.sh гоняет lua-харнесс. Без lua набор молча
         # пропускает его (штатная деградация для разработчика без lua) — то
         # есть в CI проверка тихо исчезает.
         run: sudo apt-get update && sudo apt-get install -y lua5.3
@@ -704,7 +704,7 @@ jobs:
         # skip the lua harness. Use the versioned binary explicitly:
         # `lua` symlink relies on update-alternatives which is not
         # guaranteed on minimal Ubuntu images.
-        run: lua5.3 tests/test_http_classifier.lua
+        run: lua5.3 tests/test_tcp16_lua.lua
 
   mutation:
     name: Mutation Testing

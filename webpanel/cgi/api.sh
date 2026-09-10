@@ -1247,6 +1247,26 @@ case "$method $path" in
         exit 0
         ;;
 
+    # ---------- ОБРЫВ НА 16 КБ ----------
+    "GET /tcp16")
+        json_header
+        tcp16_status_json
+        exit 0
+        ;;
+
+    "POST /tcp16/probe")
+        job_id=$(tcp16_probe_async)
+        case "$?" in
+            0) ;;
+            3) json_fail "503 Service Unavailable" "проба не установлена — переустановите z2k" ;;
+            4) json_fail "409 Conflict" "проба уже идёт" ;;
+            *) json_fail "500 Internal Server Error" "проба не запустилась" ;;
+        esac
+        json_header
+        printf '{"ok":true,"job":'; json_string "$job_id"; printf '}\n'
+        exit 0
+        ;;
+
     # ---------- DEBUG FLAG (Phase 3) ----------
     "GET /debug")
         json_header

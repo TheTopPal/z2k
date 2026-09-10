@@ -269,7 +269,7 @@ for c in lua5.3 lua5.4 lua; do
     if command -v "$c" >/dev/null 2>&1; then LUA_BIN=$c; break; fi
 done
 if [ -n "$LUA_BIN" ]; then
-    if "$LUA_BIN" tests/test_http_classifier.lua; then
+    if "$LUA_BIN" tests/test_tcp16_lua.lua; then
         passed "lua unit tests ($LUA_BIN)"
     else
         failed "lua unit tests ($LUA_BIN)"

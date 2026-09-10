@@ -63,6 +63,9 @@ printf '%s\n' '--filter-tcp=443 --filter-l7=tls --lua-desync=circular:fails=3:ti
 printf '%s\n' '--filter-tcp=443 --filter-l7=tls --lua-desync=fake:payload=tls_client_hello:dir=out:blob=fake_default_tls:repeats=4' > "$ES/TCP/YT/Strategy.txt"
 cp "$ES/TCP/YT/Strategy.txt" "$ES/TCP/YT_GV/Strategy.txt"
 printf '%s\n' '--filter-udp=443 --filter-l7=quic --lua-desync=circular:fails=3:time=60:key=yt_quic --lua-desync=fake:payload=quic_initial:dir=out:blob=fake_default_quic:repeats=3:strategy=1' > "$ES/UDP/YT/Strategy.txt"
+# Рантайм 16 КБ лежит на роутере (его везёт карта доставки), и генератор ставит
+# инстанс только при живом файле — иначе движок падал бы в error на каждом пакете.
+mkdir -p "$SB/lua" && cp files/lua/z2k-tcp16.lua "$SB/lua/"
 printf 'ENABLED=1\n' > "$SB/config"
 
 run_steps() {

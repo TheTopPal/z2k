@@ -726,35 +726,17 @@ LUA_AUTO="$ZAPRET_BASE/lua/zapret-auto.lua"
 # locked.lua (upstream'овский circular_locked) больше не загружается:
 # orchestrator.sh удалён upstream'ом 2026-05-07, mechanism осиротел.
 # Discord UDP теперь использует наш circular с allow_nohost (B1).
-# Detectors must load BEFORE autocircular: the rotator resolves
-# failure_detector=z2k_tls_stalled by global name when parsing profiles,
-# so the functions need to exist already. Autocircular still references
-# z2k_tls_alert_fatal via name-lookup after Phase 4 refactor.
-# z2k-detectors.lua УДАЛЁН 2026-08-26. Файл на 1858 строк грузился в память и
-# не делал ничего: замер боевого конфига показал, что из него достижима ровно
-# одна функция — HTTP-классификатор ответов, — и она переехала в z2k-alert.lua.
-# Остальные детекторы в профили не проводились ни разу; единственное упоминание
-# z2k_mid_stream_stall нашлось В КОММЕНТАРИИ к конфигу.
-# z2k-alert.lua — две поправки к ШТАТНОМУ детектору неудач, обе по замерам на
-# боевом роутере 2026-08-18 (файл сам их и описывает):
-#   - ретрансмиссия считается провалом только на ClientHello. Пойманная ложная
-#     ротация: телефон переслал пакет TLS application data в уже работающей
-#     сессии, и это увело рабочую стратегию при 29 успехах против 3 провалов;
-#   - фатальный TLS-алерт до ServerHello считается провалом. Пойманный тихий
-#     случай: сервер подтверждает ClientHello, отвечает семибайтовым алертом и
-#     закрывается по FIN — ни RST, ни ретрансмитов, штатный детектор слеп и
-#     страта не ротируется никогда.
-# Логика bol-van вызывается как есть, мы только сужаем вход и добавляем сигнал.
-# Грузится ПОСЛЕ zapret-auto.lua (нужны standard_failure_detector и pos_get).
-LUA_Z2K_ALERT="$ZAPRET_BASE/lua/z2k-alert.lua"
-[ -f "$LUA_Z2K_ALERT" ] && LUAOPT="$LUAOPT --lua-init=@$LUA_Z2K_ALERT"
-
-# Детектор молчания QUIC. Грузится отдельным файлом по той же схеме и с той же
-# проверкой на существование: без файла профиль с failure_detector= валился бы
-# в error на каждом пакете, а это не «детектор не работает», а «пул стал
-# пустышкой» при зелёном статусе сервиса.
-LUA_Z2K_QUIC_SILENCE="$ZAPRET_BASE/lua/z2k-quic-silence.lua"
-[ -f "$LUA_Z2K_QUIC_SILENCE" ] && LUAOPT="$LUAOPT --lua-init=@$LUA_Z2K_QUIC_SILENCE"
+# Детекторы неудач — только штатные bol-van (zapret-auto.lua), своих у нас
+# нет с 10.09.2026: z2k-detectors.lua снят 26.08, z2k-alert.lua и
+# z2k-quic-silence.lua — 10.09 вместе с патчами ротатора в форке.
+#
+# z2k-tcp16.lua — рантайм обхода обрыва на 16 КБ: подстановка белого имени по
+# карте «сеть → имя» от пробы. В ротации не участвует. Грузится ПОСЛЕ
+# zapret-lib.lua и zapret-antidpi.lua (нужны blob и tls_mod); файл проверяем
+# на существование — без него инстанс z2k_sni_pick в профиле валил бы движок
+# в error на каждом пакете.
+LUA_Z2K_TCP16="$ZAPRET_BASE/lua/z2k-tcp16.lua"
+[ -f "$LUA_Z2K_TCP16" ] && LUAOPT="$LUAOPT --lua-init=@$LUA_Z2K_TCP16"
 # Phase 6: z2k-fooling-ext.lua exports anti-ТСПУ fool functions like
 # z2k_dynamic_ttl, referenced by strategies via `fool=<name>` arg. Must
 # load after zapret-lib.lua (provides apply_fooling's extension point)
@@ -1538,12 +1520,8 @@ run_nfqws()
     #
     # Почему её убрали: режим выводился по подстроке — встретилось в
     # аргументах `failure_detector=`, значит не нативный. Решение по
-    # написанию, а не по смыслу. Наша обёртка (lua/z2k-alert.lua) делегирует
-    # штатному детектору, семантика остаётся нативной, а режим переворачивался
-    # и молча включал целый пласт чужой логики. В логе это было видно как
-    # `failure counter 3-9(succ)=net -6/3` — счётчики, которых при нативной
-    # ротации быть не должно. Политику «живой хост не ротируем» держим у себя,
-    # в той же обёртке, где её видно и можно проверить тестами.
+    # написанию, а не по смыслу. С 10.09.2026 никаких обёрток нет вовсе:
+    # детекторы штатные, параметры — из документации (lib/config_official.sh).
 
     # Проба возможностей движка — здесь: это единственное место, где командная
     # строка демона реально собирается. Второй и последующие вызовы бесплатны.
