@@ -110,6 +110,7 @@ read_globals = {
     -- z2k-white-presets.lua (provided by zapret-lib.lua / zapret-antidpi.lua /
     -- zapret-auto.lua / nfqws2 core at runtime).
     "tls_mod",
+    "tls_client_hello_mod",
     "tls_mod_shim",
     "fake_default_tls",
     "http_dissect_req",

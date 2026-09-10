@@ -48,6 +48,12 @@ z2k_install_paths() {
         files/fake/*)
             echo "${zd}/files/fake/${repo_path#files/fake/}"
             ;;
+        # Манифест пулов: установщик копирует его в корень каталога, а пулы
+        # (extra_strats/*/Strategy.txt) материализуются из него — поэтому его
+        # правка ещё и объявляет regen-strategies (см. z2k_steps_for).
+        strats_new2.txt)
+            echo "${zd}/strats_new2.txt"
+            ;;
         files/etc/*)
             echo "${zd}/etc/${repo_path#files/etc/}"
             ;;
@@ -173,7 +179,7 @@ z2k_install_paths() {
 # lighttpd ради них не за чем.
 z2k_steps_for() {
     case "$1" in
-        lib/strategies.sh)
+        lib/strategies.sh|strats_new2.txt)
             echo regen-strategies; echo regen-config; echo validate-config; echo restart-service ;;
         lib/config_official.sh)
             echo regen-config; echo validate-config; echo restart-service ;;

@@ -147,8 +147,14 @@ fi
 # В аварии files/fake/ может отсутствовать тоже; ссылка на внешний блоб дала бы
 # пул, который не стартует.
 _ext=$(z2k_emergency_tcp_pool yt_tcp; z2k_emergency_quic_pool)
+# Блоб, который сам же аварийный набор и производит (tls_client_hello_clone
+# кладёт клон настоящего hello под именем z2k_real_*), внешним не считается:
+# файла у него нет, а запасной путь клона — встроенный fake_default_tls.
+_own_blob=$(printf '%s' "$_ext" | tr ' ' '\n' | grep -oE "tls_client_hello_clone:[^ ]*blob=[a-z0-9_]+" \
+            | sed 's/.*blob=/blob=/' | sort -u)
 _bad_blob=$(printf '%s' "$_ext" | tr ' ' '\n' | grep -oE "blob=[a-z0-9_]+" \
-            | grep -v "blob=fake_default_tls" | grep -v "blob=fake_default_quic" | sort -u)
+            | grep -v "blob=fake_default_tls" | grep -v "blob=fake_default_quic" | sort -u \
+            | { if [ -n "$_own_blob" ]; then grep -vxF "$_own_blob"; else cat; fi; })
 if [ -z "$_bad_blob" ]; then
     ok "аварийные наборы опираются только на встроенные блобы движка"
 else

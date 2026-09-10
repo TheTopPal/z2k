@@ -122,7 +122,10 @@ assert_eq "регистрации blob=4pda больше нет" "0" \
 # Ссылкой считается не только blob=, но и seqovl_pattern= с pattern=: блоб может
 # использоваться ТОЛЬКО как заполнитель разреза и при этом быть совершенно
 # нужным. Без этого проверка объявила бы мёртвыми activated, gosuslugi и vk_com.
-_ref=$(grep -ohE '(blob|seqovl_pattern|pattern)=[A-Za-z_][A-Za-z0-9_]*' \
+# С 11.09.2026 фейки клонируются с настоящего hello (tls_client_hello_clone), а
+# прежний блоб остался у каждого плеча запасным — fallback= — на случай, когда
+# hello не разобрался. Это тоже ссылка: без неё все TLS-блобы стали бы «мёртвыми».
+_ref=$(grep -ohE '(blob|seqovl_pattern|pattern|fallback)=[A-Za-z_][A-Za-z0-9_]*' \
        "$ROOT/strats_new2.txt" "$ROOT/quic_strats.ini" "$ROOT/lib/config_official.sh" 2>/dev/null \
        | sed 's/.*=//' | sort -u)
 _reg=$(grep -ohE '\-\-blob=[A-Za-z_][A-Za-z0-9_]*:' "$ROOT/files/S99zapret2.new" 2>/dev/null \
@@ -132,10 +135,11 @@ _reg=$(grep -ohE '\-\-blob=[A-Za-z_][A-Za-z0-9_]*:' "$ROOT/files/S99zapret2.new"
 # подобранным именем собирается на лету, файлом его не выразить). Такой блоб
 # «регистрирует» собственный инстанс-производитель в той же строке профиля.
 # Правило общее, без списка исключений: имя засчитано, только если его пишет
-# наш же --lua-desync=z2k_*. Ссылка на блоб, которого никто не производит и не
-# регистрирует, по-прежнему провал.
-_runtime=$(grep -ohE '\-\-lua-desync=z2k_[A-Za-z0-9_]*:[^ ]*blob=[A-Za-z_][A-Za-z0-9_]*' \
-           "$ROOT/lib/config_official.sh" 2>/dev/null \
+# наш же --lua-desync=z2k_* либо штатный tls_client_hello_clone (клон
+# настоящего hello, с 11.09.2026 — все TLS-фейки). Ссылка на блоб, которого
+# никто не производит и не регистрирует, по-прежнему провал.
+_runtime=$(grep -ohE '\-\-lua-desync=(z2k_[A-Za-z0-9_]*|tls_client_hello_clone):[^ ]*blob=[A-Za-z_][A-Za-z0-9_]*' \
+           "$ROOT/strats_new2.txt" "$ROOT/lib/config_official.sh" "$ROOT/lib/utils.sh" 2>/dev/null \
            | sed 's/.*blob=//; s/:.*//' | sort -u)
 
 _missing=""

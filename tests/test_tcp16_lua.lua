@@ -25,6 +25,13 @@ function payload_check() return true end
 function replay_first() return true end
 function blob(_, name) return "CH:" .. name end
 function tls_mod(base, mods) return base .. "|" .. mods end
+-- Штатный клонировщик hello (zapret-antidpi.lua): фейк = настоящий hello с
+-- заменённым именем. Мок возвращает исходник и что в нём поменяли, чтобы
+-- проверить, что имя подставляется именно клону, а не чужому блобу.
+function tls_client_hello_mod(payload, mods)
+    return "CLONE:" .. payload .. "|sni_del=" .. tostring(mods.sni_del) .. ",sni_first=" .. mods.sni_first
+        .. ",sni_snt_new=" .. tostring(mods.sni_snt_new)
+end
 
 local FAKE_NOW = 1700000000
 os.time = function() return FAKE_NOW end
@@ -84,15 +91,35 @@ do
     is("закрепление при живой карте не действует", nil, z2k_sni_for(v4(8, 8), "общее"))
 
     -- Десинк-функция: блоб кладётся только когда имя есть, и с именем внутри.
-    local d = v4(91, 98)
+    -- Основной путь — КЛОН настоящего hello (решение 11.09.2026): в фейке
+    -- собранный hello человека (reasm_data), а не встроенный блоб.
+    local d = v4(91, 98); d.reasm_data = "HELLO-REASM"; d.dis.payload = "HELLO-PKT"
     z2k_sni_pick(nil, d)
-    is("z2k_sni_pick положил блоб с именем сети", "CH:fake_default_tls|rnd,dupsid,sni=300.ya.ru", d.z2k_ch)
-    local d2 = v4(8, 8)
+    is("z2k_sni_pick положил клон собранного hello с именем сети",
+        "CLONE:HELLO-REASM|sni_del=true,sni_first=300.ya.ru,sni_snt_new=0", d.z2k_ch)
+    local d1 = v4(91, 98); d1.dis.payload = "HELLO-PKT"
+    z2k_sni_pick(nil, d1)
+    is("без сборки клонируется payload самого пакета",
+        "CLONE:HELLO-PKT|sni_del=true,sni_first=300.ya.ru,sni_snt_new=0", d1.z2k_ch)
+    local d2 = v4(8, 8); d2.dis.payload = "HELLO-PKT"
     z2k_sni_pick(nil, d2)
     is("адрес вне карты — блоба нет", nil, d2.z2k_ch)
-    local d3 = v4(104, 21); d3.arg = { blob = "my_ch", mods = "rnd", src = "fake_x" }
+    local d3 = v4(104, 21); d3.dis.payload = "HELLO-PKT"; d3.arg = { blob = "my_ch" }
     z2k_sni_pick(nil, d3)
-    is("имя блоба, исходник и моды берутся из аргументов инстанса", "CH:fake_x|rnd,sni=hcaptcha.com", d3.my_ch)
+    is("имя блоба берётся из аргументов инстанса",
+        "CLONE:HELLO-PKT|sni_del=true,sni_first=hcaptcha.com,sni_snt_new=0", d3.my_ch)
+    -- Запасной путь: hello не разобрался (клонировщик отказал) — прежняя
+    -- подстановка имени во встроенный блоб через tls_mod, а не тишина.
+    local real_clone = tls_client_hello_mod
+    tls_client_hello_mod = function() error("not a client hello") end
+    local d4 = v4(104, 21); d4.dis.payload = "GARBAGE"; d4.arg = { blob = "my_ch", mods = "rnd", src = "fake_x" }
+    z2k_sni_pick(nil, d4)
+    is("hello не разобрался — запасной путь: встроенный блоб + tls_mod", "CH:fake_x|rnd,sni=hcaptcha.com", d4.my_ch)
+    tls_client_hello_mod = function() return nil end
+    local d5 = v4(91, 98); d5.dis.payload = "GARBAGE"
+    z2k_sni_pick(nil, d5)
+    is("клонировщик вернул nil — тот же запасной путь", "CH:fake_default_tls|rnd,dupsid,sni=300.ya.ru", d5.z2k_ch)
+    tls_client_hello_mod = real_clone
     restore()
 
     -- Карты имён нет вовсе: работает ручное закрепление.

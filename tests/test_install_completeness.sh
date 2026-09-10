@@ -126,9 +126,17 @@ for f in $LUA_USED; do
         | sed 's/.*"\([a-z_][a-zA-Z_0-9]*\)".*/\1/' | tr '\n' ' ')"
 done
 
+# Блоб, который производит штатный tls_client_hello_clone: клон настоящего
+# hello под именем blob=<имя> (с 11.09.2026 — все TLS-фейки, имена z2k_real_*).
+# Файла у него нет, регистрировать нечего; производитель стоит в той же строке
+# профиля, что и потребитель, и это единственное место, где имя «объявлено».
+CLONE_DEFINED=$(grep -ohE -- '--lua-desync=tls_client_hello_clone:[^ "]*blob=[a-z_][a-zA-Z_0-9]*' \
+    strats_new2.txt lib/config_official.sh lib/utils.sh 2>/dev/null \
+    | sed 's/.*blob=//; s/:.*//' | sort -u | tr '\n' ' ')
+
 GHOST=""
 for n in $BLOB_REFS; do
-    case " $LOADED_BLOBS $BUILTIN_BLOBS $LUA_DEFINED " in
+    case " $LOADED_BLOBS $BUILTIN_BLOBS $LUA_DEFINED $CLONE_DEFINED " in
         *" $n "*) ;;
         *) GHOST="$GHOST $n" ;;
     esac

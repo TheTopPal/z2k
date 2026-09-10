@@ -20,7 +20,7 @@
 --                           (Z2K_SNI_PIN); действует, только когда карты имён нет
 --
 -- Грузится ПОСЛЕ zapret-lib.lua и zapret-antidpi.lua: нужны blob, tls_mod,
--- direction_check, payload_check, replay_first.
+-- tls_client_hello_mod, direction_check, payload_check, replay_first.
 
 -- КОМУ СТАВИТЬ ИМЯ: ТОЛЬКО СЕТЯМ, ГДЕ БЛОК НАЙДЕН.
 --
@@ -174,13 +174,25 @@ function z2k_sni_pick(ctx, desync)
 	local name = z2k_sni_for(desync, z2k_sni_pinned())
 	if not name then return end
 
-	local base = blob(desync, desync.arg.src or "fake_default_tls")
-	if not base then return end
-	-- rnd и dupsid — то же, чем штатные плечи готовят свой фейк: случайные
-	-- random/session id и копия session id с настоящего hello.
-	local mods = (desync.arg.mods or "rnd,dupsid") .. ",sni=" .. name
-	local ok, ch = pcall(tls_mod, base, mods, desync.reasm_data)
-	if not ok or not ch then return end
+	-- КЛОН НАСТОЯЩЕГО HELLO, а не чужое тело с подменённым именем (решение
+	-- Марка 11.09.2026, как и во всех плечах): берём собранный ClientHello
+	-- самого человека и меняем в нём только имя — у фейка тот же отпечаток,
+	-- что у реального трафика этого устройства. Замер 10.09 на линии
+	-- владельца: как фейк клон открыл то, что встроенный блоб не открыл.
+	-- Если hello не разобрался — прежний путь: встроенный блоб + tls_mod.
+	local ch
+	local okc, cloned = pcall(tls_client_hello_mod, desync.reasm_data or desync.dis.payload,
+		{ sni_del = true, sni_first = name, sni_snt_new = 0 })
+	if okc and cloned then
+		ch = cloned
+	else
+		local base = blob(desync, desync.arg.src or "fake_default_tls")
+		if not base then return end
+		local mods = (desync.arg.mods or "rnd,dupsid") .. ",sni=" .. name
+		local okm, mod = pcall(tls_mod, base, mods, desync.reasm_data)
+		if not okm or not mod then return end
+		ch = mod
+	end
 	desync[desync.arg.blob or "z2k_ch"] = ch
 	if b_debug then
 		DLOG("z2k_sni_pick: подставлено имя " .. name)

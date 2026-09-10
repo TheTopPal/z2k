@@ -445,8 +445,11 @@ check_blob_references() {
                         # инстанс --lua-desync=z2k_*. Ссылка на блоб, которого
                         # никто не регистрирует и не производит, по-прежнему
                         # провал.
+                        # Второй такой же производитель — штатный
+                        # tls_client_hello_clone: с 11.09.2026 все TLS-фейки
+                        # клонируются с настоящего hello в блоб z2k_real_*.
                         if printf '%s\n' "$_opt_text" \
-                           | grep -qE -- "--lua-desync=z2k_[A-Za-z0-9_]*:[^ ]*blob=${_blob_name}([:[:space:]]|$)"; then
+                           | grep -qE -- "--lua-desync=(z2k_[A-Za-z0-9_]*|tls_client_hello_clone):[^ ]*blob=${_blob_name}([:[:space:]]|$)"; then
                             continue
                         fi
                         # Проверить файл в fake директории
@@ -493,7 +496,7 @@ fakedsplit fakeddisorder multisplit multidisorder \
 hostfakesplit http_methodeol syndata pktmod udplen \
 rst rstack synack \
 z2k_quic_morph_v2 z2k_timing_morph z2k_ipfrag3 z2k_ipfrag3_tiny \
-z2k_sni_pick"
+tls_client_hello_clone z2k_sni_pick"
 
 is_known_action() {
     _action="$1"
