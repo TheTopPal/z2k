@@ -198,7 +198,26 @@ while IFS= read -r f; do
     fi
 done < "$CHANGED"
 
-[ -n "$DELIVERABLE" ] || die "с $PREV_REF не изменилось ни одного доставляемого файла — релизить нечего"
+# Полная переустановка. Исполнитель, увидев флаг full_install, идёт старым
+# путём (скачать z2k.sh, прогнать установку). Нужна ровно тому, что адресными
+# шагами не закрывается — смена структуры каталогов, новые пакеты opkg, движок
+# nfqws2. Движок ловится сам по смене пина в lib/install.sh (см.
+# z2k_engine_pin_changed); остальное объявляется явно Z2K_RELEASE_FULL_INSTALL=1.
+# Такой релиз может не менять ни одного доставляемого файла — гейт ниже это
+# учитывает.
+FULL_INSTALL=false
+FULL_WHY=""
+if [ "${Z2K_RELEASE_FULL_INSTALL:-0}" = "1" ]; then
+    FULL_INSTALL=true
+    FULL_WHY="объявлено явно (Z2K_RELEASE_FULL_INSTALL=1)"
+fi
+if git diff "$PREV_REF"..HEAD -- lib/install.sh | z2k_engine_pin_changed; then
+    FULL_INSTALL=true
+    FULL_WHY="${FULL_WHY:+$FULL_WHY; }сменился движок nfqws2 (пин в lib/install.sh)"
+fi
+
+[ -n "$DELIVERABLE" ] || [ "$FULL_INSTALL" = true ] \
+    || die "с $PREV_REF не изменилось ни одного доставляемого файла — релизить нечего"
 
 printf 'заявляем (%s):\n' "$(printf '%s' "$DELIVERABLE" | wc -w | tr -d ' ')"
 for f in $DELIVERABLE; do printf '  %s\n' "$f"; done
@@ -378,14 +397,10 @@ else
     printf 'последствия релиза: нет — файлы подхватываются на лету\n'
 fi
 
-# Аварийный люк. Z2K_RELEASE_FULL_INSTALL=1 помечает релиз как требующий полной
-# переустановки: исполнитель, увидев флаг, идёт старым путём (скачать z2k.sh,
-# прогнать установку). Держится ровно для случаев, которые адресными шагами не
-# закрываются — смена структуры каталогов, новые пакеты opkg, движок nfqws2.
-FULL_INSTALL=false
-if [ "${Z2K_RELEASE_FULL_INSTALL:-0}" = "1" ]; then
-    FULL_INSTALL=true
-    printf 'ВНИМАНИЕ: релиз помечен как требующий полной переустановки\n'
+# Флаг полной переустановки вычислен выше, у гейта доставляемости; здесь
+# только сообщаем, почему релиз пойдёт старым путём.
+if [ "$FULL_INSTALL" = true ]; then
+    printf 'ВНИМАНИЕ: релиз помечен как требующий полной переустановки — %s\n' "$FULL_WHY"
 fi
 
 # --- Запись в историю ---------------------------------------------------------

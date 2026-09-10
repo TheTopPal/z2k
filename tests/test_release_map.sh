@@ -41,6 +41,19 @@ assert_eq "панель"                   "rebuild-panel " "$(s webpanel/lightt
 assert_eq "список — без последствий" "" "$(s files/lists/a.txt)"
 assert_eq "install.sh — без последствий (носитель шагов установки)" "" "$(s lib/install.sh)"
 
+# Смена пина движка = полная переустановка, и это решает сборка по диффу, а не
+# память человека (r-83 уехал без движка). Комментарий рядом со строкой —
+# не смена движка.
+e() { if printf '%s\n' "$1" | z2k_engine_pin_changed; then echo yes; else echo no; fi; }
+assert_eq "смена fallback_url = движок сменился" "yes" \
+  "$(e '-    local fallback_url="https://x/v1.0.5-z2k-r0/a.tar.gz"
++    local fallback_url="https://x/v1.0.5.1-z2k-r0/a.tar.gz"')"
+assert_eq "правка комментария рядом — не смена движка" "no" \
+  "$(e '-    # Эталон install_bin.sh из ПРИКРЕПЛЁННОГО релиза (v1.0.5-z2k-r0;
++    # Эталон install_bin.sh из ПРИКРЕПЛЁННОГО релиза (v1.0.5.1-z2k-r0;
+     local fallback_url="https://x/v1.0.5-z2k-r0/a.tar.gz"')"
+assert_eq "пустой дифф — не смена движка" "no" "$(e '')"
+
 assert_eq "канонический порядок" \
   "regen-strategies regen-config validate-config refresh-binaries rebuild-panel reset-state restart-service cleanup-ip-hosts" \
   "$(z2k_all_steps | tr '\n' ' ' | sed 's/ $//')"
