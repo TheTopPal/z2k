@@ -1,8 +1,8 @@
 {
   "schema": 1,
   "branch": "z2k-enhanced",
-  "seq": 85,
-  "current": "p-84.2",
+  "seq": 86,
+  "current": "p-84.3",
   "install_map": {
   "files/000-zapret2.sh": ["/opt/etc/ndm/netfilter.d/000-zapret2.sh"],
   "files/S99zapret2.new": ["/opt/etc/init.d/S99zapret2"],
@@ -196,7 +196,7 @@
   "files/z2k-config-validator.sh": "5c382dd3e9009ffac6c3c3640fee10c8af2a9cbcb802636c7e3b62fddcea663b",
   "files/z2k-detect-watchdog.sh": "8dd2a50edeb1c7001c6dbe654cf0e1f120ccf2e8c9659074003fb0fba532b5bf",
   "files/z2k-diag.sh": "2f4e95976cbc6494be868d59de7f776466b97c6410b63db9c4bbf8d6bc777b94",
-  "files/z2k-dns-check.sh": "3934308a10767b90e59800adfd6e03670655049c7a57e358e63c0ae0d566ac7b",
+  "files/z2k-dns-check.sh": "07a7947acfb552d3bb6d59238c4a5484d19f88a92f3767ef66f7cb46c5ac62bd",
   "files/z2k-fix-tg-watchdog.sh": "95a063051c86b11fe96aa5b39349306500a54b1b25601b38184046cfedcd161e",
   "files/z2k-geosite.sh": "690a1f98afad41a4fb6452c789a08c3928939bf8a96c33547d07dad0790fde00",
   "files/z2k-insta-ip-refresh.sh": "67d073f508bd3bc0b3d83ac6cb91635f2817fdbb85af997ef8714c909078da69",
@@ -255,7 +255,7 @@
   "webpanel/www/fonts/FiraSans-600-latin.woff2": "f3cc7b2756c566cf8172bfd269d805c4a1eb953f6b6ce8bf2b2ddf49c5422189",
   "webpanel/www/fonts/FiraSans-700-cyrillic.woff2": "42a8013e902099b563e434d3ccb3bed87ff6d6af8d80fe51ff203f2ac487673b",
   "webpanel/www/fonts/FiraSans-700-latin.woff2": "811e73619cc2909792e8fa134c8d1ed714b898310dd4cc218fc29e40a5dc2890",
-  "webpanel/www/index.html": "2f8e34eaeb860d159a731caf8c8f4c9b0ad1c5821253f24c94c6641172d9a845",
+  "webpanel/www/index.html": "085334a734a773a89b02f16fc783b51fd1275c44a926091c3a3d9ae93ff32b82",
   "webpanel/www/js/chrome.js": "3e2217758cde6d87f4809aaf65c4aafca582b936d9c53b19abb4adac1479fdef",
   "webpanel/www/js/core/api.js": "eaa798b49c02373a1cffcdee447587f9969194323dd5471ac74a07d4af7b235f",
   "webpanel/www/js/core/auth.js": "7afe5b139737783402f45fb654b9383b24d68779aae93a0f5f1847608252ad8c",
@@ -536,6 +536,7 @@
 {"v": "r-83.1", "type": "reinstall", "ts": "2026-09-10T10:46:09Z", "ref": "r-83.1", "desc": "Движок обхода обновляется до zapret2 1.0.5.1 по-настоящему: предыдущее обновление сменило номер, но движок не тронуло. Установка проходит заново, настройки и списки сохраняются.", "changed_files": ["webpanel/www/index.html", "UPDATES.json"], "steps": [], "full_install": true},
 {"v": "r-84", "type": "reinstall", "ts": "2026-09-10T18:46:05Z", "ref": "r-84", "desc": "Обход стал устойчивее: поддельные приветствия теперь копируют настоящее приветствие вашего устройства, а не заготовку, и сайты с большими приветствиями (Chrome, Firefox) больше не зависают. Ротация стратегий переведена на штатные детекторы zapret2, обрыв на 16 КБ вынесен в отдельную проверку с кнопкой на дашборде. Обновление полное: приезжает новый движок.", "changed_files": ["webpanel/www/index.html", "files/S99zapret2.new", "files/lua/z2k-tcp16.lua", "files/z2k-config-validator.sh", "files/z2k-diag.sh", "lib/config_official.sh", "lib/install.sh", "lib/utils.sh", "strats_new2.txt", "webpanel/cgi/actions.sh", "webpanel/cgi/api.sh", "webpanel/www/js/pages/dashboard.js", "z2k.sh", "UPDATES.json"], "steps": ["regen-strategies", "regen-config", "validate-config", "restart-service"], "full_install": true},
 {"v": "r-84.1", "type": "reinstall", "ts": "2026-09-10T20:50:56Z", "ref": "r-84.1", "desc": "Исправлен обход после r-84: поддельные приветствия снова маскируются как раньше, и сайты, которые перестали открываться, открываются. Проверка обрыва на 16 КБ получила свои списки и подробный ход в панели, карточка на дашборде стала компактнее. Обновление полное.", "changed_files": ["webpanel/www/index.html", "files/lua/z2k-tcp16.lua", "files/z2k-diag.sh", "files/z2k-tcp16-probe.sh", "lib/auto_update.sh", "lib/config_official.sh", "lib/install.sh", "lib/utils.sh", "strats_new2.txt", "webpanel/www/js/pages/dashboard.js", "webpanel/www/style.css", "UPDATES.json"], "steps": ["regen-strategies", "regen-config", "validate-config", "restart-service"], "full_install": false},
-{"v": "p-84.2", "type": "patch", "ts": "2026-09-10T21:51:07Z", "ref": "p-84.2", "desc": "Проверка DNS в панели стала честнее: каждый сервер опрашивается по его собственному адресу, а не через резолвер роутера, заворот обычного DNS показывается отдельно, а «умные» DNS-сервисы, подставляющие свои прокси-адреса вместо сайтов, теперь видны. Сводка диагностики показывает снимок этой проверки с его возрастом.", "changed_files": ["webpanel/www/index.html", "files/z2k-diag.sh", "files/z2k-dns-check.sh", "webpanel/www/js/pages/diag.js", "UPDATES.json"], "steps": [], "full_install": false}
+{"v": "p-84.2", "type": "patch", "ts": "2026-09-10T21:51:07Z", "ref": "p-84.2", "desc": "Проверка DNS в панели стала честнее: каждый сервер опрашивается по его собственному адресу, а не через резолвер роутера, заворот обычного DNS показывается отдельно, а «умные» DNS-сервисы, подставляющие свои прокси-адреса вместо сайтов, теперь видны. Сводка диагностики показывает снимок этой проверки с его возрастом.", "changed_files": ["webpanel/www/index.html", "files/z2k-diag.sh", "files/z2k-dns-check.sh", "webpanel/www/js/pages/diag.js", "UPDATES.json"], "steps": [], "full_install": false},
+{"v": "p-84.3", "type": "patch", "ts": "2026-09-10T22:12:45Z", "ref": "p-84.3", "desc": "Проверка DNS в панели снова показывает ход по каждому серверу сразу, а не молчит до конца, и стала вдвое быстрее.", "changed_files": ["webpanel/www/index.html", "files/z2k-dns-check.sh", "UPDATES.json"], "steps": [], "full_install": false}
   ]
 }
