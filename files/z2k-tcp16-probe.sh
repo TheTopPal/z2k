@@ -194,7 +194,25 @@ mkdir -p "$(dirname "$FLAG")" 2>/dev/null
 # и прислал диагностику, где механизм молчит.
 DETECT_ENV="GODEBUG=asyncpreemptoff=1"
 
-env $DETECT_ENV "$DETECT" tcp16 -targets "$TARGETS" -parallel "$PARALLEL" -asn-out "$ASNOUT" > "$LOG" 2>&1
+# Вывод пробы идёт и в журнал, и на экран: кнопка в панели показывает живой
+# лог задачи, а раньше три минуты висела пустая рамка — всё уходило только в
+# $LOG, и человеку казалось, что ничего не делается (Марк, 11.09.2026). Код
+# возврата через файл: в конвейере с tee $? — это код tee.
+_rcf="$LOG.rc"
+run_logged() {   # run_logged <как писать в LOG: > или >> > <команда...>
+    local _mode="$1"; shift
+    rm -f "$_rcf"
+    if [ "$_mode" = ">>" ]; then
+        { "$@" 2>&1; echo "$?" > "$_rcf"; } | tee -a "$LOG"
+    else
+        { "$@" 2>&1; echo "$?" > "$_rcf"; } | tee "$LOG"
+    fi
+    local _r; _r=$(cat "$_rcf" 2>/dev/null || echo 1); rm -f "$_rcf"
+    return "$_r"
+}
+
+echo "проба линии: $(grep -vc '^#' "$TARGETS" 2>/dev/null || echo '?') мишеней в $PARALLEL потоков, качаю с каждой по 20 КБ"
+run_logged ">" env $DETECT_ENV "$DETECT" tcp16 -targets "$TARGETS" -parallel "$PARALLEL" -asn-out "$ASNOUT"
 rc=$?
 
 case "$rc" in
@@ -203,8 +221,10 @@ case "$rc" in
         # Имя на каждую найденную сеть. Пишем во временный файл и подменяем
         # разом: половина карты хуже, чем прежняя целая.
         if [ -s "$CAND" ]; then
-            if env $DETECT_ENV "$DETECT" tcp16 -targets "$TARGETS" -scan "$CAND" -per-asn \
-                 -sni-out "$SNIOUT.new" -parallel "$PARALLEL" -batch "$BATCH" >> "$LOG" 2>&1; then
+            echo
+            echo "подбор имён: $(grep -vc '^#' "$CAND" 2>/dev/null || echo '?') кандидатов на каждую сеть с обрывом, пачками по $BATCH"
+            if run_logged ">>" env $DETECT_ENV "$DETECT" tcp16 -targets "$TARGETS" -scan "$CAND" -per-asn \
+                 -sni-out "$SNIOUT.new" -parallel "$PARALLEL" -batch "$BATCH"; then
                 mv -f "$SNIOUT.new" "$SNIOUT"
             else
                 rm -f "$SNIOUT.new"

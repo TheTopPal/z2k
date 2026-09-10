@@ -1593,24 +1593,15 @@ ol.steps > li::marker,
 .btn-danger:hover { background: var(--bad-alpha-mid); }
 .btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
 
-/* Обрыв на 16 КБ: строка состояния + кнопка в одну линию. Точка несёт
-   цвет вердикта, текст — сам вердикт словами; тот же ряд, что и у
-   переключателей (.toggle-row), только без нижней линии. На узком экране
-   кнопка уходит под строку. */
-.tcp16-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-12);
-  flex-wrap: wrap;
-}
+/* Обрыв на 16 КБ: строка состояния, под ней кнопка в общем .btn-row слева,
+   как у остальных карточек. Точка несёт цвет вердикта, текст — сам вердикт. */
 .tcp16-state {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: var(--space-8);
   font-size: 13px;
   color: var(--text);
-  min-width: 0;
+  margin: 0 0 var(--space-12);
 }
 .tcp16-dot {
   flex: none;

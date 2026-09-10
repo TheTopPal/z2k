@@ -27,8 +27,9 @@ export async function renderDashboard() {
     <!-- Обрыв на 16 КБ живёт отдельной системой: проба линии по опорным
          адресам, карта «сеть → имя», подстановка имени. В ротацию стратегий
          он не входит, поэтому и карточка своя, а не строка в состоянии.
-         Одна строка состояния и кнопка, а не плитки: плитки на всю ширину
-         под три слова — пустое место, владелец снял их 11.09.2026. -->
+         Строка состояния и под ней кнопка слева, как во всех карточках:
+         плитки на всю ширину под три слова — пустое место, кнопка справа —
+         единственная в панели; владелец снял и то и другое 11.09.2026. -->
     <div class="card" id="tcp16-card">
       <h3>Обрыв на 16 КБ</h3>
       <p class="desc">
@@ -36,8 +37,8 @@ export async function renderDashboard() {
         стратегий это не лечит: z2k проверяет линию каждую ночь и подбирает
         сетям с обрывом другое имя.
       </p>
-      <div class="tcp16-row">
-        <div class="tcp16-state" id="tcp16-state"><span class="tcp16-dot"></span><span class="tcp16-text">проверяю…</span></div>
+      <div class="tcp16-state" id="tcp16-state"><span class="tcp16-dot"></span><span class="tcp16-text">проверяю…</span></div>
+      <div class="btn-row">
         <button class="btn btn-primary" id="tcp16-probe-btn">Пробить 16 КБ</button>
       </div>
     </div>
