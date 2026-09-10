@@ -1,8 +1,8 @@
 {
   "schema": 1,
   "branch": "z2k-enhanced",
-  "seq": 81,
-  "current": "r-83",
+  "seq": 82,
+  "current": "r-83.1",
   "install_map": {
   "files/000-zapret2.sh": ["/opt/etc/ndm/netfilter.d/000-zapret2.sh"],
   "files/S99zapret2.new": ["/opt/etc/init.d/S99zapret2"],
@@ -257,7 +257,7 @@
   "webpanel/www/fonts/FiraSans-600-latin.woff2": "f3cc7b2756c566cf8172bfd269d805c4a1eb953f6b6ce8bf2b2ddf49c5422189",
   "webpanel/www/fonts/FiraSans-700-cyrillic.woff2": "42a8013e902099b563e434d3ccb3bed87ff6d6af8d80fe51ff203f2ac487673b",
   "webpanel/www/fonts/FiraSans-700-latin.woff2": "811e73619cc2909792e8fa134c8d1ed714b898310dd4cc218fc29e40a5dc2890",
-  "webpanel/www/index.html": "d284dc3f89df5cc93d0afd41a5a4e9d05b10ee4bd7e9b13d1a20d16da99a37f5",
+  "webpanel/www/index.html": "8d54b9dec884276975c359bed46584bd1e47f028bf695066d3965e0d525c4db3",
   "webpanel/www/js/chrome.js": "3e2217758cde6d87f4809aaf65c4aafca582b936d9c53b19abb4adac1479fdef",
   "webpanel/www/js/core/api.js": "eaa798b49c02373a1cffcdee447587f9969194323dd5471ac74a07d4af7b235f",
   "webpanel/www/js/core/auth.js": "7afe5b139737783402f45fb654b9383b24d68779aae93a0f5f1847608252ad8c",
@@ -534,6 +534,7 @@
 {"v": "p-82.16", "type": "patch", "ts": "2026-09-06T10:27:39Z", "ref": "p-82.16", "desc": "Установка WARP больше не упирается в GitHub напрямую: движок качается через тот же обходной путь, что и остальные обновления, включая наш узел и зеркала. Заодно скачанный движок теперь сверяется по контрольной сумме.", "changed_files": ["webpanel/www/index.html", "files/z2k-warp.sh", "UPDATES.json"], "steps": [], "full_install": false},
 {"v": "p-82.17", "type": "patch", "ts": "2026-09-06T18:31:04Z", "ref": "p-82.17", "desc": "Планировщик снова подхватывает новый код после обновления на роутерах без пакета coreutils-stat: время файла теперь читается средством, которое есть в busybox всегда.", "changed_files": ["webpanel/www/index.html", "files/S99zapret2.new", "files/z2k-scheduler.sh", "UPDATES.json"], "steps": ["restart-service"], "full_install": false},
 {"v": "p-82.18", "type": "patch", "ts": "2026-09-07T11:07:08Z", "ref": "p-82.18", "desc": "Туннель Telegram и обход cdnbase теперь обслуживает один процесс вместо двух: меньше нагрузка на роутер и на узел, а порт cdnbase впервые получил тот же сторож, что и Telegram.", "changed_files": ["webpanel/www/index.html", "files/init.d/S97z2k-http-tunnel", "files/init.d/S98tg-tunnel", "files/ndm/91-z2k-http-tunnel-redirect.sh", "mtproxy-client/builds/tg-mtproxy-client-linux-386", "mtproxy-client/builds/tg-mtproxy-client-linux-amd64", "mtproxy-client/builds/tg-mtproxy-client-linux-arm", "mtproxy-client/builds/tg-mtproxy-client-linux-arm64", "mtproxy-client/builds/tg-mtproxy-client-linux-mips", "mtproxy-client/builds/tg-mtproxy-client-linux-mips64el", "mtproxy-client/builds/tg-mtproxy-client-linux-mips64le", "mtproxy-client/builds/tg-mtproxy-client-linux-mipsel", "mtproxy-client/builds/tg-mtproxy-client-linux-mipsle", "mtproxy-client/builds/tg-mtproxy-client-linux-ppc64", "mtproxy-client/builds/tg-mtproxy-client-linux-riscv64", "mtproxy-client/builds/tg-mtproxy-client-linux-x86", "UPDATES.json"], "steps": ["refresh-binaries"], "full_install": false},
-{"v": "r-83", "type": "reinstall", "ts": "2026-09-10T10:23:43Z", "ref": "r-83", "desc": "Движок обхода обновлён до zapret2 1.0.5.1: точнее разбирается TLS, аккуратнее собираются обманные пакеты, быстрее выбирается профиль. Установка проходит заново, ваши настройки и списки сохраняются.", "changed_files": ["webpanel/www/index.html", "lib/install.sh", "UPDATES.json"], "steps": [], "full_install": false}
+{"v": "r-83", "type": "reinstall", "ts": "2026-09-10T10:23:43Z", "ref": "r-83", "desc": "Движок обхода обновлён до zapret2 1.0.5.1: точнее разбирается TLS, аккуратнее собираются обманные пакеты, быстрее выбирается профиль. Установка проходит заново, ваши настройки и списки сохраняются.", "changed_files": ["webpanel/www/index.html", "lib/install.sh", "UPDATES.json"], "steps": [], "full_install": false},
+{"v": "r-83.1", "type": "reinstall", "ts": "2026-09-10T10:46:09Z", "ref": "r-83.1", "desc": "Движок обхода обновляется до zapret2 1.0.5.1 по-настоящему: предыдущее обновление сменило номер, но движок не тронуло. Установка проходит заново, настройки и списки сохраняются.", "changed_files": ["webpanel/www/index.html", "UPDATES.json"], "steps": [], "full_install": true}
   ]
 }
