@@ -203,6 +203,9 @@ generate_nfqws2_opt_from_strategies() {
     # --payload=discord_ip_discovery,stun — гейтим именно discovery/STUN-сигнатуры
     # (не quic_initial — то для QUIC/443, не для голоса). БЕЗ keepalive (см.
     # NFQWS2_PORTS_UDP_KEEPALIVE ниже — отключён по этой же причине).
+    # Пул — на блобе quic_dbankcloud (порт z4r); снимок ACTIVE_DISCORD_UDP от
+    # Flowseal, добавленный 26.08.2026, снят 10.09.2026 по решению Марка —
+    # чужие блобы не берём, очередь вернулась к прежней шестёрке.
     # strategy=1 = базовый fake quic_dbankcloud repeats=10 (рычаг bol-van против
     # просадки голоса — "поиграться репитами" #6915; 10 = рабочий референс юзера);
     # 2-6 — fallback'и (разные repeats/ttl) для circular-перебора, все под d4-cutoff.
@@ -214,7 +217,7 @@ generate_nfqws2_opt_from_strategies() {
     # вместо per-IP фрагментации стокового host_ip fallback'а (иначе Discord
     # voice холодно стартует на каждом новом DC-IP). Нативная замена archived
     # allow_nohost (z2k-autocircular) — алгоритм ротации остаётся circular().
-    discord_udp="--filter-udp=50000-50100,1400,3478-3481,5349,19294-19344 --filter-l7=discord,stun --out-range=-d4 --payload=discord_ip_discovery,stun --lua-desync=circular:fails=3:time=60:udp_in=1:udp_out=4:key=discord_udp:nld=2:hostkey=z2k_nohost_key --lua-desync=fake:payload=all:blob=active_discord_udp:repeats=6:strategy=1 --lua-desync=fake:payload=all:blob=active_discord_udp:repeats=5:strategy=2 --lua-desync=fake:payload=discord_ip_discovery:blob=stun:repeats=3:strategy=3 --lua-desync=fake:payload=all:blob=active_discord_udp:repeats=3:strategy=3 --lua-desync=fake:payload=discord_ip_discovery:blob=stun:repeats=10:strategy=4 --lua-desync=fake:payload=all:blob=quic_dbankcloud:repeats=10:strategy=4 --lua-desync=fake:payload=discord_ip_discovery:blob=stun:repeats=3:strategy=5 --lua-desync=fake:payload=all:blob=quic_dbankcloud:repeats=3:strategy=5 --lua-desync=fake:payload=discord_ip_discovery:blob=stun:repeats=6:strategy=6 --lua-desync=fake:payload=all:blob=quic_dbankcloud:repeats=6:strategy=6 --lua-desync=fake:payload=discord_ip_discovery:blob=stun:repeats=6:strategy=7 --lua-desync=fake:payload=all:blob=quic_dbankcloud:repeats=6:ip_autottl=-2,3-20:strategy=7 --lua-desync=fake:payload=discord_ip_discovery:blob=stun:repeats=4:strategy=8 --lua-desync=fake:payload=all:blob=quic_dbankcloud:repeats=4:strategy=8 --lua-desync=fake:payload=discord_ip_discovery:blob=stun:repeats=5:strategy=9 --lua-desync=fake:payload=all:blob=quic_dbankcloud:repeats=5:strategy=9"
+    discord_udp="--filter-udp=50000-50100,1400,3478-3481,5349,19294-19344 --filter-l7=discord,stun --out-range=-d4 --payload=discord_ip_discovery,stun --lua-desync=circular:fails=3:time=60:udp_in=1:udp_out=4:key=discord_udp:nld=2:hostkey=z2k_nohost_key --lua-desync=fake:payload=all:blob=quic_dbankcloud:repeats=10:strategy=1 --lua-desync=fake:payload=all:blob=quic_dbankcloud:repeats=3:strategy=2 --lua-desync=fake:payload=all:blob=quic_dbankcloud:repeats=6:strategy=3 --lua-desync=fake:payload=all:blob=quic_dbankcloud:repeats=6:ip_autottl=-2,3-20:strategy=4 --lua-desync=fake:payload=all:blob=quic_dbankcloud:repeats=4:strategy=5 --lua-desync=fake:payload=all:blob=quic_dbankcloud:repeats=5:strategy=6"
 
     # Дефолт для пула, чей Strategy.txt пуст или нечитаем.
     #
