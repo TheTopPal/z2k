@@ -724,6 +724,16 @@ au_step_regen_strategies() {
     au_gen_libs_source || { au_log "regen-strategies: нет генераторов в ${ZAPRET2_DIR}/lib"; return 1; }
     command -v create_default_strategy_files >/dev/null 2>&1 || {
         au_log "regen-strategies: create_default_strategy_files недоступна"; return 1; }
+    # Плечи берутся не из strats_new2.txt, а из strategies.conf, который из
+    # манифеста собирает установщик. Без этого шага патч с новым манифестом
+    # материализовал бы СТАРЫЕ плечи (найдено 11.09.2026 на r-84.1: правка
+    # фейков не доезжала до движка, пока strategies.conf не пересобран).
+    local _rs_manifest="${ZAPRET2_DIR:-/opt/zapret2}/strats_new2.txt"
+    local _rs_conf="${CONFIG_DIR:-/opt/etc/zapret2}/strategies.conf"
+    if [ -s "$_rs_manifest" ] && command -v generate_strategies_conf >/dev/null 2>&1; then
+        generate_strategies_conf "$_rs_manifest" "$_rs_conf" >/dev/null 2>&1 \
+            || au_log "regen-strategies: strategies.conf не пересобрался из манифеста — плечи останутся прежними"
+    fi
     create_default_strategy_files >/dev/null 2>&1
 }
 
