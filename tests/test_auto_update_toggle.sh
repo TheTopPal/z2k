@@ -56,8 +56,16 @@ ROOT="$TMP/opt"
 mkdir -p "$ROOT/lib"
 printf 'z2k-enhanced\n' > "$ROOT/.z2k-branch"
 : > "$ROOT/lib/utils.sh"
+# au_run_apply РОЖДАЕТ ПОТОМКА, и это несущая часть фикстуры, а не украшение.
+# Настоящий au_run_apply запускает установщик, установщик на шаге 12 —
+# `/opt/etc/init.d/S99z2k-scheduler restart`, то есть вечный демон. Всё, что
+# осталось в окружении к этому моменту, демон унесёт в себе до перезагрузки.
+# Поэтому проверяем не переменные этой оболочки, а то, что ВИДИТ ребёнок.
 cat > "$ROOT/lib/auto_update.sh" <<'STUB'
-au_run_apply() { echo "APPLY_RAN"; }
+au_run_apply() {
+    echo "APPLY_RAN"
+    sh -c 'echo "CHILD_ENV M=[${Z2K_AU_MANUAL:-нет}] J=[${Z2K_AU_NO_JITTER:-нет}]"'
+}
 au_run_check() { echo "CHECK_RAN"; }
 STUB
 
@@ -105,6 +113,54 @@ out=$(run 'Z2K_AUTO_UPDATE_ENABLED=0' check)
 case "$out" in *CHECK_RAN*) ok "проверка наличия обновлений не блокируется" ;;
                *) no "проверка наличия обновлений не блокируется" "CHECK_RAN" "$out" ;; esac
 
+# --- метки ручного запуска НЕ уезжают в потомков ----------------------------
+#
+# ПОЧЕМУ ЭТО ВАЖНЕЕ, ЧЕМ ВЫГЛЯДИТ. Z2K_AU_MANUAL=1 значит «гейт не применять»,
+# и приходит она переменной ОКРУЖЕНИЯ от кнопки в панели. Окружение наследует
+# всё дерево потомков, а в дереве есть установщик, который перезапускает
+# планировщик — вечный демон. Демон уносил метку в себе и раздавал её каждому
+# ночному запуску через run_task: выключенное автообновление начинало
+# срабатывать каждую ночь, пока роутер не перезагрузят. Ровно это и пришло из
+# поля 12.09.2026 («автообновления у меня офф всегда», а ночью обновилось).
+#
+# Вторая метка, Z2K_AU_NO_JITTER, утекала тем же путём и снимала разброс
+# 0..90 мин — такие роутеры шли на GitHub в 02:00:00 все вместе.
+out=$(run 'Z2K_AUTO_UPDATE_ENABLED=0' apply 'Z2K_AU_MANUAL=1')
+case "$out" in *'CHILD_ENV M=[нет]'*) ok "Z2K_AU_MANUAL не наследуется установщиком и планировщиком" ;;
+               *) no "Z2K_AU_MANUAL не наследуется потомками" "M=[нет]" "$out" ;; esac
+case "$out" in *'J=[нет]'*) ok "Z2K_AU_NO_JITTER не наследуется потомками" ;;
+               *) no "Z2K_AU_NO_JITTER не наследуется потомками" "J=[нет]" "$out" ;; esac
+# …и при этом сама метка на ЭТОТ запуск продолжает действовать (гейт пройден).
+case "$out" in *APPLY_RAN*) ok "снятая метка всё ещё открыла гейт этому запуску" ;;
+               *) no "снятая метка открыла гейт этому запуску" "APPLY_RAN" "$out" ;; esac
+
+# Второй рубеж: планировщик чистит окружение сам — на случай запуска из меню
+# (там Z2K_AU_NO_JITTER выставляется мимо этого скрипта) и из SSH-сессии.
+SCHED="$HERE/files/z2k-scheduler.sh"
+_unset_ln=$(grep -n '^unset Z2K_AU_MANUAL Z2K_AU_NO_JITTER$' "$SCHED" | head -1 | cut -d: -f1)
+# Комментарии не считаем: пояснение выше само упоминает run_task, и по нему
+# тест проходил бы уже на прозе.
+_task_ln=$(grep -n '^[[:space:]]*run_task ' "$SCHED" | head -1 | cut -d: -f1)
+if [ -n "$_unset_ln" ] && [ -n "$_task_ln" ] && [ "$_unset_ln" -lt "$_task_ln" ]; then
+    ok "планировщик снимает чужие метки до первой задачи"
+else
+    no "планировщик снимает чужие метки до первой задачи" "unset раньше run_task" \
+       "unset=${_unset_ln:-нет} run_task=${_task_ln:-нет}"
+fi
+
+# --- пропуск обязан оставить след в журнале обновлений ----------------------
+#
+# Без него по журналу нельзя отличить «гейт сработал» от «ночь не наступала», а
+# именно этого следа не хватило, чтобы разобрать жалобу выше: stdout ловил
+# планировщик в свой лог, журнал обновлений молчал.
+printf 'Z2K_AUTO_UPDATE_ENABLED=0\n' > "$ROOT/config"
+env Z2K_AU_NO_JITTER=1 Z2K_AU_LOG_FILE="$TMP/au.log" sh "$UNDER_TEST" apply >/dev/null 2>&1
+if grep -q 'отключено в настройках' "$TMP/au.log" 2>/dev/null; then
+    ok "пропуск записан в журнал обновлений"
+else
+    no "пропуск записан в журнал обновлений" "строка в au.log" "$(cat "$TMP/au.log" 2>/dev/null)"
+fi
+
 # --- the value is parsed like every other flag in the config ----------------
 out=$(run 'Z2K_AUTO_UPDATE_ENABLED="0"' apply)
 case "$out" in *APPLY_RAN*) no "значение в кавычках распознаётся" "без APPLY_RAN" "$out" ;;
@@ -112,6 +168,12 @@ case "$out" in *APPLY_RAN*) no "значение в кавычках распо�
 out=$(run 'Z2K_AUTO_UPDATE_ENABLED= 0' apply)
 case "$out" in *APPLY_RAN*) no "значение с пробелом распознаётся" "без APPLY_RAN" "$out" ;;
                *) ok "значение с пробелом распознаётся" ;; esac
+# Апострофы — не выдумка: install.sh переносит сохранённые флаги в новый конфиг
+# пословно, как они лежали в бэкапе, а set_flag берёт в апострофы всё, что не
+# голое слово. Раньше такая строка читалась как «не ноль» и открывала гейт.
+out=$(run "Z2K_AUTO_UPDATE_ENABLED='0'" apply)
+case "$out" in *APPLY_RAN*) no "значение в апострофах распознаётся" "без APPLY_RAN" "$out" ;;
+               *) ok "значение в апострофах распознаётся" ;; esac
 # Anything that is not exactly 0 must leave updates ON — fail safe, not silent off.
 out=$(run 'Z2K_AUTO_UPDATE_ENABLED=' apply)
 case "$out" in *APPLY_RAN*) ok "пустое значение = включено (не выключаем молча)" ;;
