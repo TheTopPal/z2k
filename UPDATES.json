@@ -1,8 +1,8 @@
 {
   "schema": 1,
   "branch": "z2k-enhanced",
-  "seq": 88,
-  "current": "p-84.5",
+  "seq": 89,
+  "current": "p-84.6",
   "install_map": {
   "files/000-zapret2.sh": ["/opt/etc/ndm/netfilter.d/000-zapret2.sh"],
   "files/S99zapret2.new": ["/opt/etc/init.d/S99zapret2"],
@@ -183,7 +183,7 @@
   "files/lua/z2k-fooling-ext.lua": "4b5efb6672f54dbe4d04440066f06e84d92e43c8534cdfb88d136028e6d8231f",
   "files/lua/z2k-modern-core.lua": "5f4b5312e69447b887d868be74b756d103515eca59765f9155a358bf96da08c7",
   "files/lua/z2k-range-rand.lua": "073c24d9133484b9f2282f1e398b5963eb577b483c1cab8c29cfd6e7bf8acd9a",
-  "files/lua/z2k-silence.lua": "739ee1c2b02a1c6a7867311be4a3c10756c9df3bdb0551d848833ede32a60de7",
+  "files/lua/z2k-silence.lua": "beaf3881f665b0d9253a065372b7943f416583c73022c56a318af72604de57cc",
   "files/lua/z2k-state-persist.lua": "364eaecc858c004733eb5d6cf9cdf51ae31854b7dfa1d00caa8198a9ea21adaf",
   "files/lua/z2k-tcp16.lua": "340002edff2035d1882431802cc0920b5d2faf7c733613a1051415b4816fdf9d",
   "files/ndm/90-z2k-tg-redirect.sh": "ca6de843d4fd820a58ad0fc76566b7640011d7f6161d31b5b84720197f0fe19a",
@@ -193,7 +193,7 @@
   "files/ndm/93-z2k-warp.sh": "fc4537cec6fe550e6f6fe1b44aa97fd4d7c401bd4a00bdb465af010ed340f480",
   "files/ndm/94-z2k-ppe-deoffload.sh": "34b025dfb8385c4f837b70e6864c9a61e6823feb7f3cbba5e602ffdb5a6e5254",
   "files/ndm/95-z2k-scheduler-watchdog.sh": "d73955d742263bda01ecca1be4b04deb7bba61164a5da2609f3e9977f443ad63",
-  "files/z2k-auto-update.sh": "f8b10d95667dc4eb2a64a5a126b42cf4572170cfe23655bfe5effe831a77e9b7",
+  "files/z2k-auto-update.sh": "fe4ab212582c6bda216eb0103cfbf19dc45601f224e99d0d66c21d5becf84274",
   "files/z2k-blocked-monitor.sh": "441c5054e002c17aa7223a8694fa943a62579643a03d99b0870a94060e358a2f",
   "files/z2k-config-validator.sh": "5bdbb2585d726b9be16db9382af1e2250efaf6a507a34030babae2abdbe42fdc",
   "files/z2k-detect-watchdog.sh": "8dd2a50edeb1c7001c6dbe654cf0e1f120ccf2e8c9659074003fb0fba532b5bf",
@@ -204,7 +204,7 @@
   "files/z2k-insta-ip-refresh.sh": "67d073f508bd3bc0b3d83ac6cb91635f2817fdbb85af997ef8714c909078da69",
   "files/z2k-nfqueue-selfheal.sh": "4095adce7626c7ceffa6779be428920286b1dd9d98427e1e49b36d2895d3fd8a",
   "files/z2k-ppe-deoffload.sh": "9a98f3f22c6572d3692a7b4cf7fb1432f2c42fc9d67d06e3841cffb9c0f4b4e4",
-  "files/z2k-scheduler.sh": "2566a7aeec2d66ba1ef4ce1844b8b5c884e6d327955d7684c35040c452ef4ffc",
+  "files/z2k-scheduler.sh": "b1072682add4f41cfa6c9f448c5aead1e1025b0042a2ab48af841340ce8c6978",
   "files/z2k-stats-upload.sh": "45f33be7405bfa1e6445b6c7969cfa2555778fae05843e4dd60f06bc816e1ce5",
   "files/z2k-tcp16-probe.sh": "8a46c8ce90eaaa10ab95b8428a9a05654723e4a458cb4b818d3ab78f80ddfb7e",
   "files/z2k-tg-redirect.sh": "a44943bee350aab47c86cb5231465a51abe2de6813ac2d1d13cf7e13262f3c29",
@@ -257,7 +257,7 @@
   "webpanel/www/fonts/FiraSans-600-latin.woff2": "f3cc7b2756c566cf8172bfd269d805c4a1eb953f6b6ce8bf2b2ddf49c5422189",
   "webpanel/www/fonts/FiraSans-700-cyrillic.woff2": "42a8013e902099b563e434d3ccb3bed87ff6d6af8d80fe51ff203f2ac487673b",
   "webpanel/www/fonts/FiraSans-700-latin.woff2": "811e73619cc2909792e8fa134c8d1ed714b898310dd4cc218fc29e40a5dc2890",
-  "webpanel/www/index.html": "2f0ff5c383044f1787fe70a60de8f6604ab9be473c90ee73098d7c90268880d6",
+  "webpanel/www/index.html": "a8a4678fd04f85611c9e849190a70a0da65161d05d165f6817acab1c07312345",
   "webpanel/www/js/chrome.js": "3e2217758cde6d87f4809aaf65c4aafca582b936d9c53b19abb4adac1479fdef",
   "webpanel/www/js/core/api.js": "eaa798b49c02373a1cffcdee447587f9969194323dd5471ac74a07d4af7b235f",
   "webpanel/www/js/core/auth.js": "7afe5b139737783402f45fb654b9383b24d68779aae93a0f5f1847608252ad8c",
@@ -541,6 +541,7 @@
 {"v": "p-84.2", "type": "patch", "ts": "2026-09-10T21:51:07Z", "ref": "p-84.2", "desc": "Проверка DNS в панели стала честнее: каждый сервер опрашивается по его собственному адресу, а не через резолвер роутера, заворот обычного DNS показывается отдельно, а «умные» DNS-сервисы, подставляющие свои прокси-адреса вместо сайтов, теперь видны. Сводка диагностики показывает снимок этой проверки с его возрастом.", "changed_files": ["webpanel/www/index.html", "files/z2k-diag.sh", "files/z2k-dns-check.sh", "webpanel/www/js/pages/diag.js", "UPDATES.json"], "steps": [], "full_install": false},
 {"v": "p-84.3", "type": "patch", "ts": "2026-09-10T22:12:45Z", "ref": "p-84.3", "desc": "Проверка DNS в панели снова показывает ход по каждому серверу сразу, а не молчит до конца, и стала вдвое быстрее.", "changed_files": ["webpanel/www/index.html", "files/z2k-dns-check.sh", "UPDATES.json"], "steps": [], "full_install": false},
 {"v": "p-84.4", "type": "patch", "ts": "2026-09-11T07:10:52Z", "ref": "p-84.4", "desc": "Автоподбор стратегий теперь замечает и такую блокировку, при которой сайт не отвечает вовсе: раньше в этом случае подбор замирал на первой стратегии и страница просто висела до таймаута. Появились настройки Z2K_SILENCE_DETECT и Z2K_SILENCE_SECONDS.", "changed_files": ["webpanel/www/index.html", "files/S99zapret2.new", "files/lua/z2k-silence.lua", "files/z2k-config-validator.sh", "lib/config_official.sh", "z2k.sh", "UPDATES.json"], "steps": ["regen-config", "validate-config", "restart-service"], "full_install": false},
-{"v": "p-84.5", "type": "patch", "ts": "2026-09-11T08:33:29Z", "ref": "p-84.5", "desc": "Автоподбор стратегий доведён до конца: теперь он реагирует и когда ответ сайта начался и оборвался, и когда часть запросов к сайту проходит, а часть режется — раньше в обоих случаях подбор оставался на первой стратегии.", "changed_files": ["webpanel/www/index.html", "files/lua/z2k-silence.lua", "UPDATES.json"], "steps": ["restart-service"], "full_install": false}
+{"v": "p-84.5", "type": "patch", "ts": "2026-09-11T08:33:29Z", "ref": "p-84.5", "desc": "Автоподбор стратегий доведён до конца: теперь он реагирует и когда ответ сайта начался и оборвался, и когда часть запросов к сайту проходит, а часть режется — раньше в обоих случаях подбор оставался на первой стратегии.", "changed_files": ["webpanel/www/index.html", "files/lua/z2k-silence.lua", "UPDATES.json"], "steps": ["restart-service"], "full_install": false},
+{"v": "p-84.6", "type": "patch", "ts": "2026-09-11T09:32:43Z", "ref": "p-84.6", "desc": "Выключенное автообновление больше не включается само после ручного обновления из панели — настройка теперь держится. Подбор стратегий перестал бесконечно перебирать список, когда сайт не открывается по причине, не связанной с обходом: пройдя список один раз, он останавливается и снова берётся за подбор, как только сайт отвечает.", "changed_files": ["webpanel/www/index.html", "files/lua/z2k-silence.lua", "files/z2k-auto-update.sh", "files/z2k-scheduler.sh", "UPDATES.json"], "steps": ["restart-service"], "full_install": false}
   ]
 }
