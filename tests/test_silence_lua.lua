@@ -426,7 +426,13 @@ do
         local crec = {}
         arm(crec)
         fire_one()
-        HREC.failure_counter = nil   -- чужое успешное соединение обнулило штатный
+        -- Рядом идёт УСПЕШНОЕ соединение того же домена: так и выглядит сайт,
+        -- часть запросов которого отдаётся. Оно обнуляет штатный счётчик и не
+        -- должно стирать накопленные молчания.
+        local ok_crec = {}
+        arm(ok_crec)
+        z2k_fail_silence(in_pkt(5000), ok_crec)
+        HREC.failure_counter = nil
     end
     is("три молчания подряд двигают стратегию, несмотря на чужие успехи", 2, HREC.nstrategy)
 
@@ -453,6 +459,45 @@ do
     fire_one()
     is("молчания старше окна не считаются", 1, HREC.nstrategy)
     FAKE_NOW = 1700000000
+end
+
+-- ----- 12. пул листается не больше одного круга ------------------------------
+--
+-- chatgpt.com на роутере владельца уехал на 22-ю стратегию: сайт у него не
+-- открывается ни по одному адресу, детектор честно видит молчание и листает
+-- плечи по кругу. Ни одно не помогает — значит дело не в стратегии (мёртвый
+-- адрес, блок по имени целиком, прокси «умного» DNS). Дальше листать вредно:
+-- пул выжигается, а при возврате сайта человек оказывается на случайном плече.
+do
+    reset_state()
+    COUNTER_VERDICT = false
+    -- ctstrategy = 5: ровно пять ротаций и стоп
+    for i = 1, 20 do
+        local crec = {}
+        arm(crec)
+        fire_one()
+        HREC.failure_counter = nil
+    end
+    is("после полного круга ротация по молчанию прекращается", 5, HREC.z2k_sil_rot)
+    is("и стратегия дальше не двигается", 1, HREC.nstrategy)
+
+    -- Ответивший сайт снимает ограничитель: дальше подбор снова работает.
+    reset_state()
+    COUNTER_VERDICT = false
+    for i = 1, 20 do
+        local crec = {}
+        arm(crec); fire_one(); HREC.failure_counter = nil
+    end
+    local stuck = HREC.nstrategy
+    local crec = {}
+    arm(crec)
+    z2k_fail_silence(in_pkt(5000), crec)     -- сайт ответил
+    fire_one()
+    for i = 1, 3 do
+        crec = {}
+        arm(crec); fire_one(); HREC.failure_counter = nil
+    end
+    is("после ответа сайта подбор снова двигается", true, HREC.nstrategy ~= stuck)
 end
 
 printf = nil

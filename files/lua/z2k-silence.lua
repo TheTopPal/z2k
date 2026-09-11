@@ -21,6 +21,18 @@ end
 local timer_seq = 0
 local timers_active = 0
 
+-- Состоявшийся обмен снимает ОГРАНИЧИТЕЛЬ КРУГА: сайт отвечает, значит подбор
+-- снова имеет смысл.
+--
+-- Накопленные молчания при этом НЕ стираются, и это главное: штатный счётчик
+-- и так гасится любым успехом, а для сайта, часть запросов которого режется,
+-- это означало бы «не переключать никогда» (замер 11.09.2026: 8 соединений,
+-- 4 молчания, 4 успеха, 0 ротаций). Молчания гаснут только временем.
+local function hrec_clear_rotation_limit(desync)
+    local hrec = automate_host_record(desync)
+    if hrec then hrec.z2k_sil_rot = nil end
+end
+
 -- Потолок одновременных таймеров: на роутере с 500 МБ очередь ожиданий не
 -- должна расти неограниченно. Загруженная страница к заблокированному домену
 -- открывает десятки молчащих соединений разом.
@@ -103,8 +115,23 @@ function z2k_silence_fire(name, d)
     local rotate = automate_failure_counter(hrec, crec, d.fails, d.maxtime)
     if not rotate and hrec.z2k_sil_count >= d.fails then rotate = true end
 
+    -- ПУЛ ЛИСТАЕТСЯ НЕ БОЛЬШЕ ОДНОГО КРУГА.
+    --
+    -- Если молчат все плечи подряд, дело не в стратегии: сайт не открывается
+    -- по другой причине — мёртвый адрес, блок по имени целиком, прокси
+    -- «умного» DNS. На роутере владельца так уехал chatgpt.com на 22-е плечо,
+    -- не открывшись ни на одном. Дальше листать вредно: пул выжигается, а при
+    -- возврате сайта человек оказывается на случайном плече. Ограничитель
+    -- снимает любой состоявшийся обмен с этим доменом.
+    if rotate and (hrec.z2k_sil_rot or 0) >= hrec.ctstrategy then
+        hrec.z2k_sil_count = nil
+        DLOG("z2k_fail_silence: пул пройден целиком и молчит — дело не в стратегии, не листаю")
+        rotate = false
+    end
+
     if rotate then
         hrec.z2k_sil_count = nil
+        hrec.z2k_sil_rot = (hrec.z2k_sil_rot or 0) + 1
         hrec.nstrategy = (hrec.nstrategy % hrec.ctstrategy) + 1
         DLOG("z2k_fail_silence: сервер молчит — стратегия " .. hrec.nstrategy)
     end
@@ -145,6 +172,7 @@ function z2k_fail_silence(desync, crec)
         if crec.z2k_sil then
             if fin then
                 crec.z2k_answered = true
+                hrec_clear_rotation_limit(desync)
                 timer_del(crec.z2k_sil)
                 timers_active = timers_active - 1
                 crec.z2k_sil = nil
@@ -152,6 +180,7 @@ function z2k_fail_silence(desync, crec)
                 crec.z2k_in_bytes = (crec.z2k_in_bytes or 0) + n
                 if crec.z2k_in_bytes >= success_bytes(desync) then
                     crec.z2k_answered = true
+                    hrec_clear_rotation_limit(desync)
                     timer_del(crec.z2k_sil)
                     timers_active = timers_active - 1
                     crec.z2k_sil = nil
