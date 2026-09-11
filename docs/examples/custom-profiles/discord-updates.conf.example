@@ -1,0 +1,20 @@
+# Пример пользовательского профиля: updates.discord.com
+#
+# Скопировать в lists/custom-profiles/discord-updates.conf (без .example) и
+# пересобрать конфиг. Апдейтер Discord (Rust/rustls, крупное приветствие ~1.8 КБ)
+# и сам сайт discord.com в браузере (Chromium) режутся по-разному, а в профиле
+# rkn у них общий ключ ротации — одной стратегией не угодить обоим. Отдельный
+# профиль перехватывает updates.discord.com раньше rkn (nfqws2 = first-match) и
+# держит для него свою фиксированную стратегию, не трогая остальной Discord.
+#
+# Стратегия записана БУКВАЛЬНО (сами опции desync), а не номером из арсенала:
+# номера тасуются при обновлении, а этот профиль обязан пережить обновление.
+# Комментарии (#) и пустые строки игнорируются — всё склеится в одну строку.
+#
+# ВАЖНО: конкретные опции ниже — пример формы. Подберите рабочую стратегию под
+# свою блокировку (панель z2k, раздел «Стратегии», или z2k-detect) и впишите
+# её сюда. Ошибка в строке роняет весь обход — проверяйте до применения.
+--filter-tcp=443 --filter-l7=tls
+--hostlist-domains=updates.discord.com
+--lua-desync=tls_client_hello_clone:payload=tls_client_hello:dir=out:blob=z2k_real_www_microsoft_com:sni_del:sni_first=www.microsoft.com:sni_snt_new=0:fallback=fake_default_tls
+--lua-desync=fake:payload=tls_client_hello:dir=out:blob=z2k_real_www_microsoft_com:repeats=4-8:tcp_seq=2:tls_mod=rnd,dupsid
