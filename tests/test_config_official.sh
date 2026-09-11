@@ -278,10 +278,12 @@ run_generator() {
     # обязан повторять установленную систему.
     mkdir -p "$root/lua"
     cp "$SCRIPT_DIR/files/lua/z2k-tcp16.lua" "$root/lua/" 2>/dev/null || true
-    # Детектор молчания тоже резолвится по имени в _G и тоже проводится в
-    # конфиг только при наличии файла на диске.
-    [ "${Z2K_TEST_NO_SILENCE_LUA:-0}" = "1" ] \
-        || cp "$SCRIPT_DIR/files/lua/z2k-silence.lua" "$root/lua/" 2>/dev/null || true
+    # Поправки к штатному детектору и детектор молчания QUIC тоже резолвятся
+    # по имени в _G и тоже проводятся в конфиг только при наличии файла.
+    [ "${Z2K_TEST_NO_DETECTOR_LUA:-0}" = "1" ] || {
+        cp "$SCRIPT_DIR/files/lua/z2k-alert.lua" "$root/lua/" 2>/dev/null || true
+        cp "$SCRIPT_DIR/files/lua/z2k-quic-silence.lua" "$root/lua/" 2>/dev/null || true
+    }
     [ -n "$extra_cb" ] && eval "$extra_cb \"$root\""
     ( ZAPRET2_DIR="$root" generate_nfqws2_opt_from_strategies 2>/dev/null )
     rm -rf "$root"
@@ -598,53 +600,43 @@ assert_contains "yt_tcp: окно счётчика 300 (замер ТВ 25-26.08
 _quic=$(printf '%s\n' "$_flat_doc" | grep -F "key=yt_quic" | head -1)
 assert_contains     "yt_quic: udp_in=1 по документации" "udp_in=1"  "$_quic"
 assert_contains     "yt_quic: udp_out=5 по замеру"      "udp_out=5" "$_quic"
-assert_not_contains "yt_quic: нет детектора молчания"   "quic_silence" "$_quic"
+assert_contains     "yt_quic: детектор молчания QUIC проведён" "failure_detector=z2k_fail_quic_silence" "$_quic"
 _http=$(printf '%s\n' "$_flat_doc" | grep -F "key=http_rkn" | head -1)
-assert_not_contains "http_rkn: без своей обёртки" "failure_detector=" "$_http"
+assert_contains "http_rkn: обёртка проведена и здесь" "failure_detector=z2k_fail_tls_alert" "$_http"
 
-# --- детектор молчания (решение 11.09.2026) ---------------------------------
+# --- поправки к штатному детектору (сняты 10.09, возвращены 11.09.2026) -----
 #
-# Штатные признаки провала все активные: ретрансмиссия, входящий RST,
-# DPI-редирект. Замер на линии владельца 11.09: DPI пропускает ClientHello,
-# сервер подтверждает все байты и замолкает — ротация стоит вечно, человек
-# видит ERR_TIMED_OUT. Детектор ждёт ответа и, не дождавшись, считает провал;
-# штатные признаки он вызывает первой строкой и не теряет.
+# Детектор не заменяет штатный, а оборачивает: зовёт standard_failure_detector
+# и добавляет поправки, каждая из которых меряна на боевом роутере (шапка
+# files/lua/z2k-alert.lua). Все они ротацию ПРИТОРМАЖИВАЮТ — живой хост не
+# ротируем, RST самого сервера не провал, провал вешается на ту стратегию, на
+# которой соединение началось.
 for _k in rkn_tcp yt_tcp gv_tcp; do
     _circ=$(printf '%s\n' "$_flat_doc" | grep -F "key=$_k" | head -1 | tr ' ' '\n' | grep -- '--lua-desync=circular:' | head -1)
-    assert_contains "$_k: детектор молчания включён" "failure_detector=z2k_fail_silence" "$_circ"
-    assert_contains "$_k: порог молчания 5 с"        "silence=5"                          "$_circ"
+    assert_contains "$_k: обёртка детектора проведена" "failure_detector=z2k_fail_tls_alert" "$_circ"
+    assert_contains "$_k: штатные пороги рядом уцелели" "retrans=3"                          "$_circ"
 done
-# Детектор узнаёт об ответе сервера только из вызовов на ВХОДЯЩИХ пакетах.
+# Обёртка узнаёт о живости хоста только из вызовов на ВХОДЯЩИХ пакетах.
 # Два условия в профиле это обеспечивают, и оба легко потерять правкой:
 #   - у ротатора нет фильтра по типу payload (иначе его зовут только на
-#     ClientHello: стенд 11.09.2026 в такой конфигурации выдал отвечающему
-#     серверу два провала и ротацию);
-#   - задано окно входящих (иначе диапазон пуст и инстанс не вызывается вовсе —
-#     на стенде это выглядело как «входящих пакетов не видно»).
+#     ClientHello, и весь гвард живости мёртв);
+#   - задано окно входящих (иначе диапазон пуст и инстанс не вызывается вовсе).
 for _k in rkn_tcp yt_tcp gv_tcp; do
     _line=$(printf '%s\n' "$_flat_doc" | grep -F "key=$_k" | head -1)
     _before=$(printf '%s' "$_line" | sed 's/--lua-desync=circular.*//')
     assert_not_contains "$_k: фильтр payload не режет вызовы ротатора" "--payload=" "$_before"
     assert_contains     "$_k: окно входящих задано"                    "--in-range=" "$_line"
 done
+# QUIC — свой детектор и свой файл: штатный для UDP не работает в принципе
+# (замер 19.08 по 1646 потокам), различает классы только время.
 _quic_sil=$(printf '%s\n' "$_flat_doc" | grep -F "key=yt_quic" | head -1)
-assert_not_contains "yt_quic: детектор молчания на UDP не вешаем" "z2k_fail_silence" "$_quic_sil"
+assert_not_contains "yt_quic: TCP-обёртку на UDP не вешаем" "z2k_fail_tls_alert" "$_quic_sil"
 
-OUT_SIL_OFF=$(run_generator "silence-off" "Z2K_SILENCE_DETECT=0" "_seed_tls_circulars")
-_rkn_sil_off=$(get_rkn_tcp_arm_line "$OUT_SIL_OFF" | tr ' ' '\n' | grep -- '--lua-desync=circular:' | head -1)
-assert_not_contains "Z2K_SILENCE_DETECT=0: детектора нет"      "failure_detector=" "$_rkn_sil_off"
-assert_not_contains "Z2K_SILENCE_DETECT=0: порога тоже нет"    "silence="          "$_rkn_sil_off"
-assert_contains     "Z2K_SILENCE_DETECT=0: штатное на месте"   "retrans=3"         "$_rkn_sil_off"
-
-OUT_SIL_8=$(run_generator "silence-8" "Z2K_SILENCE_SECONDS=8" "_seed_tls_circulars")
-_rkn_sil_8=$(get_rkn_tcp_arm_line "$OUT_SIL_8" | tr ' ' '\n' | grep -- '--lua-desync=circular:' | head -1)
-assert_contains "Z2K_SILENCE_SECONDS=8: порог берётся из конфига" "silence=8" "$_rkn_sil_8"
-
-# Файла модуля нет — имя функции резолвить некому, движок падал бы в error()
+# Файлов модулей нет — имя функции резолвить некому, движок падал бы в error()
 # на каждом пакете профиля. Тот же гейт, что у подстановки имени 16 КБ.
-OUT_SIL_NOLUA=$(Z2K_TEST_NO_SILENCE_LUA=1 run_generator "silence-nolua" "" "_seed_tls_circulars")
-_rkn_nolua=$(get_rkn_tcp_arm_line "$OUT_SIL_NOLUA" | tr ' ' '\n' | grep -- '--lua-desync=circular:' | head -1)
-assert_not_contains "без файла модуля детектор не проводится" "z2k_fail_silence" "$_rkn_nolua"
+OUT_DET_NOLUA=$(Z2K_TEST_NO_DETECTOR_LUA=1 run_generator "detect-nolua" "" "_seed_tls_circulars")
+_rkn_nolua=$(get_rkn_tcp_arm_line "$OUT_DET_NOLUA" | tr ' ' '\n' | grep -- '--lua-desync=circular:' | head -1)
+assert_not_contains "без файла модуля детектор не проводится" "failure_detector=" "$_rkn_nolua"
 assert_contains     "без файла модуля штатное на месте"       "retrans=3"        "$_rkn_nolua"
 assert_contains     "http_rkn: fails=3"           "circular:fails=3" "$_http"
 
@@ -655,15 +647,21 @@ assert_not_contains "Z2K_CIRCULAR_RESET=0: reset снят"      ":reset"   "$_rk
 assert_contains     "Z2K_CIRCULAR_RESET=0: retrans=3 остался" "retrans=3" "$_rkn_norst"
 
 # Правленый руками Strategy.txt с чужим детектором и старыми порогами
-# приводится к тому же: имя функции, которой нет на диске, роняет движок.
+# приводится к тому же виду: имя функции, которой нет на диске, роняет движок в
+# error() на каждом пакете профиля. z2k_mid_stream_stall — как раз такое имя:
+# файл с ним снят 26.08.2026, а в чужих сборках строка встречается до сих пор.
 _seed_hand_edited() {
     local root="$1"
-    echo "--filter-tcp=443 --filter-l7=tls --lua-desync=circular:fails=3:retrans=1:maxseq=16384:inseq=26000:time=60:key=rkn_tcp:failure_detector=z2k_fail_tls_alert --lua-desync=fake:payload=tls_client_hello:dir=out:blob=fake_default_tls:strategy=1" \
+    echo "--filter-tcp=443 --filter-l7=tls --lua-desync=circular:fails=3:retrans=1:maxseq=16384:inseq=26000:time=60:key=rkn_tcp:failure_detector=z2k_mid_stream_stall --lua-desync=fake:payload=tls_client_hello:dir=out:blob=fake_default_tls:strategy=1" \
         > "$root/extra_strats/TCP/RKN/Strategy.txt"
 }
 OUT_HAND=$(run_generator "docalign-hand" "" "_seed_hand_edited")
 _rkn_hand=$(get_rkn_tcp_arm_line "$OUT_HAND" | tr ' ' '\n' | grep -- '--lua-desync=circular:' | head -1)
-assert_not_contains "ручной Strategy.txt: чужой детектор срезан"   "failure_detector=z2k_fail_tls_alert" "$_rkn_hand"
+assert_not_contains "ручной Strategy.txt: мёртвый детектор срезан" "z2k_mid_stream_stall" "$_rkn_hand"
+# …и на его место встаёт наш, существующий на диске.
+assert_contains     "ручной Strategy.txt: проведён живой детектор" "failure_detector=z2k_fail_tls_alert" "$_rkn_hand"
+_dups_det=$(printf '%s' "$_rkn_hand" | grep -o "failure_detector=" | wc -l | tr -d ' ')
+assert_eq "ручной Strategy.txt: детектор не задвоен" "1" "$_dups_det"
 assert_not_contains "ручной Strategy.txt: inseq=26000 снят"        "inseq=26000"       "$_rkn_hand"
 assert_contains     "ручной Strategy.txt: inseq=4096 поставлен"    "inseq=4096"        "$_rkn_hand"
 assert_contains     "ручной Strategy.txt: retrans=3 поставлен"     "retrans=3"         "$_rkn_hand"
@@ -678,14 +676,11 @@ printf 'ENABLED=1\n' > "$_root_pkt/config"
 assert_eq "NFQWS2_TCP_PKT_IN=10 в конфиге" 'NFQWS2_TCP_PKT_IN="10"' "$(grep -E '^NFQWS2_TCP_PKT_IN=' "$_root_pkt/config" | head -1)"
 assert_eq "Z2K_CIRCULAR_RESET переживает регенерацию (умолчание 1)" 'Z2K_CIRCULAR_RESET=1' "$(grep -E '^Z2K_CIRCULAR_RESET=' "$_root_pkt/config" | head -1)"
 assert_eq "Z2K_USE_MID_STREAM_DETECTOR больше не пишется" "" "$(grep -E '^Z2K_USE_MID_STREAM_DETECTOR=' "$_root_pkt/config" | head -1)"
-# Выключатель и порог детектора молчания обязаны переживать регенерацию:
-# иначе выключенный человеком детектор возвращался бы каждым обновлением.
-assert_eq "Z2K_SILENCE_DETECT переживает регенерацию (умолчание 1)" 'Z2K_SILENCE_DETECT=1' "$(grep -E '^Z2K_SILENCE_DETECT=' "$_root_pkt/config" | head -1)"
-assert_eq "Z2K_SILENCE_SECONDS переживает регенерацию (умолчание 5)" 'Z2K_SILENCE_SECONDS=5' "$(grep -E '^Z2K_SILENCE_SECONDS=' "$_root_pkt/config" | head -1)"
-printf 'ENABLED=1\nZ2K_SILENCE_DETECT=0\nZ2K_SILENCE_SECONDS=9\n' > "$_root_pkt/config"
-( ZAPRET2_DIR="$_root_pkt" create_official_config "$_root_pkt/config" >/dev/null 2>&1 )
-assert_eq "выключенный детектор молчания не воскресает" 'Z2K_SILENCE_DETECT=0' "$(grep -E '^Z2K_SILENCE_DETECT=' "$_root_pkt/config" | head -1)"
-assert_eq "свой порог молчания сохраняется"             'Z2K_SILENCE_SECONDS=9' "$(grep -E '^Z2K_SILENCE_SECONDS=' "$_root_pkt/config" | head -1)"
+# Ключи снятого 11.09.2026 детектора молчания в конфиг больше не пишутся.
+# Проверяем именно отсутствие: пока они писались, регенерация возвращала их со
+# значением по умолчанию, то есть «выключено» жило ровно до первого обновления.
+assert_eq "Z2K_SILENCE_DETECT больше не пишется"  "" "$(grep -E '^Z2K_SILENCE_DETECT=' "$_root_pkt/config" | head -1)"
+assert_eq "Z2K_SILENCE_SECONDS больше не пишется" "" "$(grep -E '^Z2K_SILENCE_SECONDS=' "$_root_pkt/config" | head -1)"
 rm -rf "$_root_pkt"
 
 printf "\n--- corrupt pool Strategy.txt: fail closed, keep old config (field 2026-08-06) ---\n"

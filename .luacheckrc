@@ -13,9 +13,11 @@ globals = {
     -- потому что движок ищет десинк-функцию по имени в _G, а закрепление и
     -- выбор имени бьёт напрямую юнит-тест.
     "z2k_sni_pick", "z2k_sni_pinned", "z2k_sni_for",
-    -- Детектор «сервер молчит» (files/lua/z2k-silence.lua): движок ищет
-    -- функцию детектора по имени в _G, таймер-функцию — тоже по имени.
-    "z2k_fail_silence", "z2k_silence_fire", "Z2K_SILENCE_MAX",
+    -- Поправки к штатному детектору неудач (files/lua/z2k-alert.lua) и
+    -- детектор молчания QUIC (files/lua/z2k-quic-silence.lua). Движок ищет и
+    -- детектор, и таймер-функцию по имени в _G.
+    "z2k_fail_tls_alert",
+    "z2k_fail_quic_silence", "z2k_quic_silence_timer",
     -- HTTP-bypass primitives (z2k-http-strats.lua, ALFiX port)
     "z2k_timing_morph",
     "z2k_quic_morph_v2",

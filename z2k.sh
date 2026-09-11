@@ -1342,16 +1342,30 @@ download_init_script() {
         die "Ошибка загрузки files/lua/z2k-tcp16.lua"
     fi
 
-    # z2k-silence.lua — детектор «сервер молчит». Профили ссылаются на функцию
-    # по имени (failure_detector=z2k_fail_silence), поэтому файл обязан приехать
-    # вместе с конфигом: без него движок падает в error() на каждом пакете.
-    url="${GITHUB_RAW}/files/lua/z2k-silence.lua"
-    output="${lua_dir}/z2k-silence.lua"
+    # z2k-alert.lua и z2k-quic-silence.lua — поправки к штатному детектору
+    # неудач и детектор молчания QUIC. Профили ссылаются на функции по имени
+    # (failure_detector=z2k_fail_tls_alert / z2k_fail_quic_silence), поэтому
+    # файлы обязаны приехать вместе с конфигом: без них движок падает в error()
+    # на каждом пакете профиля.
+    url="${GITHUB_RAW}/files/lua/z2k-alert.lua"
+    output="${lua_dir}/z2k-alert.lua"
     if z2k_fetch "$url" "$output"; then
-        print_success "Загружено: files/lua/z2k-silence.lua"
+        print_success "Загружено: files/lua/z2k-alert.lua"
     else
-        die "Ошибка загрузки files/lua/z2k-silence.lua"
+        die "Ошибка загрузки files/lua/z2k-alert.lua"
     fi
+
+    url="${GITHUB_RAW}/files/lua/z2k-quic-silence.lua"
+    output="${lua_dir}/z2k-quic-silence.lua"
+    if z2k_fetch "$url" "$output"; then
+        print_success "Загружено: files/lua/z2k-quic-silence.lua"
+    else
+        die "Ошибка загрузки files/lua/z2k-quic-silence.lua"
+    fi
+    # Снятый 11.09.2026 детектор молчания TCP: если он остался от прошлой
+    # версии, его надо убрать — иначе на диске лежит файл, который init
+    # загрузит, а конфиг на него больше не ссылается.
+    rm -f "${lua_dir}/z2k-silence.lua" 2>/dev/null
 
     # Phase 6: anti-ТСПУ fool extensions (z2k_dynamic_ttl and friends).
     # Strategies reference them by name via `fool=z2k_dynamic_ttl`, so the

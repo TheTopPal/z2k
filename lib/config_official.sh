@@ -412,32 +412,6 @@ generate_nfqws2_opt_from_strategies() {
     local Z2K_CIRCULAR_RESET
     Z2K_CIRCULAR_RESET=$(safe_config_read "Z2K_CIRCULAR_RESET" "${ZAPRET2_DIR:-/opt/zapret2}/config" "1")
 
-    # ДЕТЕКТОР МОЛЧАНИЯ (решение Марка 11.09.2026).
-    #
-    # Все три штатных признака провала — активные: ретрансмиссия исходящего
-    # запроса, входящий RST, DPI-редирект. Самый частый сегодня класс блока
-    # не даёт ни одного: замер на линии владельца 11.09 (x.com, instagram,
-    # discord) — DPI пропускает ClientHello до сервера, сервер подтверждает
-    # ВСЕ байты и замолкает навсегда. Клиенту ретрансмитить нечего, RST не
-    # приходит. Ротация стоит на первой стратегии вечно, человек видит
-    # ERR_TIMED_OUT и пишет «не переключается».
-    #
-    # z2k_fail_silence (files/lua/z2k-silence.lua) ждёт ответа сервера
-    # заданное число секунд и, не дождавшись, считает провал. Штатные признаки
-    # он вызывает первой строкой, поэтому ничего не теряется.
-    #
-    # Проводится только при наличии файла на диске: имя функции резолвится по
-    # _G, и без файла движок падал бы в error() на каждом пакете профиля — тот
-    # же гейт, что у подстановки имени на 16 КБ.
-    local Z2K_SILENCE_DETECT Z2K_SILENCE_SECONDS _circ_silence
-    Z2K_SILENCE_DETECT=$(safe_config_read "Z2K_SILENCE_DETECT" "${ZAPRET2_DIR:-/opt/zapret2}/config" "1")
-    Z2K_SILENCE_SECONDS=$(safe_config_read "Z2K_SILENCE_SECONDS" "${ZAPRET2_DIR:-/opt/zapret2}/config" "5")
-    case "$Z2K_SILENCE_SECONDS" in ''|*[!0-9]*) Z2K_SILENCE_SECONDS=5 ;; esac
-    _circ_silence=""
-    if [ "$Z2K_SILENCE_DETECT" != "0" ] \
-       && [ -f "${ZAPRET2_DIR:-/opt/zapret2}/lua/z2k-silence.lua" ]; then
-        _circ_silence=":failure_detector=z2k_fail_silence:silence=${Z2K_SILENCE_SECONDS}"
-    fi
     ensure_circular_doc_args() {
         local input="$1"
         local out="" token="" opts="" part="" rest=""
@@ -452,6 +426,10 @@ generate_nfqws2_opt_from_strategies() {
                     IFS=':'
                     for part in $opts; do
                         case "$part" in
+                            # silence= — токен снятого 11.09.2026 детектора
+                            # молчания. Строка остаётся в списке снимаемых:
+                            # ручной Strategy.txt, скопированный из той версии,
+                            # иначе довёз бы её до движка.
                             retrans=*|maxseq=*|inseq=*|reset|no_rst|no_http_redirect|silence=*) ;;
                             failure_detector=*|success_detector=*) ;;
                             *) rest="${rest:+$rest:}$part" ;;
@@ -460,7 +438,6 @@ generate_nfqws2_opt_from_strategies() {
                     IFS="$old_ifs"
                     token="--lua-desync=circular:${rest:+$rest:}retrans=3:maxseq=32768:inseq=4096"
                     [ "$Z2K_CIRCULAR_RESET" != "0" ] && token="${token}:reset"
-                    token="${token}${_circ_silence}"
                     ;;
             esac
             out="${out:+$out }$token"
@@ -652,11 +629,16 @@ generate_nfqws2_opt_from_strategies() {
     # больше не привязываем: она задаётся выше, по документации.
 
 
-    # Детекторы во всех пулах — штатные bol-van (решение Марка 10.09.2026).
-    # История своих детекторов (silent_drop, mid_stream_stall, tls_alert,
-    # http-классификатор, quic_silence) закрыта: они были подпорками под
-    # обрыв на 16 КБ и ложные ротации, первое берётся отдельной пробой, второе
-    # снимают параметры из документации (ensure_circular_doc_args выше).
+    # Детекторы: штатные bol-van ПЛЮС наши поправки к ним — проводка ниже,
+    # после всех правок профилей (ищи ensure_rkn_failure_detector).
+    #
+    # 10.09.2026 поправки были сняты, 11.09.2026 возвращены решением Марка:
+    # отказ от них совпал по времени с ростом числа ротаций, а заняты они ровно
+    # обратным — ротацию ПРИТОРМАЖИВАЮТ (живой хост не ротируем, RST сервера не
+    # провал, провал засчитывается той стратегии, на которой соединение
+    # началось). Не вернулись только те, что были подпорками под обрыв на
+    # 16 КБ: он теперь отдельная проба и отдельный рантайм (z2k-tcp16.lua).
+    #
     # Редирект 302/307 на чужой домен 2-го уровня ловит штатный детектор
     # (manual: «http редиректом от DPI считается…»), no_http_redirect не ставим.
 
@@ -1311,6 +1293,85 @@ generate_nfqws2_opt_from_strategies() {
     youtube_gv_tcp=$(ensure_circular_in_range "$youtube_gv_tcp")
     rkn_tcp=$(ensure_circular_in_range "$rkn_tcp")
 
+    # ---- Поправки к штатному детектору (files/lua/z2k-alert.lua) -------------
+    #
+    # ПОРЯДОК ЗНАЧИМ: проводка идёт ПОСЛЕ всех правок профилей. Выше по файлу
+    # ensure_circular_doc_args вырезает из circular любой failure_detector= и
+    # success_detector= (чтобы ручной Strategy.txt не довёз до движка имя
+    # функции, которой нет на диске), и проводка, поставленная раньше, была бы
+    # им же и съедена — молча.
+    #
+    # Детектор не заменяет штатный, а оборачивает: зовёт
+    # standard_failure_detector и добавляет отличия, каждое из которых меряли на
+    # боевом роутере 18-19.08.2026 (подробности — в шапке lua-файла):
+    #   1. ретрансмиссию считаем провалом только на первом запросе (ClientHello
+    #      или http_req). Иначе провалом становится любая потеря пакета в уже
+    #      работающей сессии, и рабочая страта уезжает при 29 успехах против 3
+    #      провалов;
+    #   2. фатальный TLS-алерт до ServerHello — провал. Без этого класс блока
+    #      «сервер подтвердил ClientHello, ответил алертом и закрылся по FIN»
+    #      не даёт детектору события вовсе;
+    #   3. RST от самого сервера — НЕ провал. Отличаем по TTL: инжектированный
+    #      на пути приходит с TTL, который потоку настоящего сервера принадлежать
+    #      не может (126 против полусотни). Без этого apple.com уезжал с рабочей
+    #      первой стратегии на нерабочую вторую;
+    #   4. живой хост не ротируем: если в текущем окне к тому же хосту прошли
+    #      нормальные ответы, поддельный RST провалом не считается;
+    #   5. провал засчитывается ТОЙ стратегии, на которой соединение началось —
+    #      иначе провалы, начатые до ротации, вешаются на плечи, не отправившие
+    #      ни одного пакета (замер 19.08: двенадцать ротаций за секунду).
+    #
+    # Проводка ставится ТОЛЬКО если файл лежит на диске: движок резолвит имя
+    # детектора по _G и на неизвестном валится в error() НА КАЖДОМ ПАКЕТЕ
+    # профиля. Это не «детектор не работает», это профиль-пустышка при зелёном
+    # статусе службы.
+    ensure_rkn_failure_detector() {
+        local input="$1"
+        # Имя детектора обязательно: умолчания здесь нет намеренно, чтобы
+        # опечатка не превратилась в тихую проводку несуществующего имени.
+        local detector_name="${2:?ensure_rkn_failure_detector: имя детектора обязательно}"
+        local out=""
+        local token=""
+        for token in $input; do
+            case "$token" in
+                --lua-desync=circular:*)
+                    case "$token" in
+                        *failure_detector=*) ;;
+                        *) token="${token}:failure_detector=${detector_name}" ;;
+                    esac
+                    ;;
+            esac
+            out="${out:+$out }$token"
+        done
+        printf '%s' "$out"
+    }
+
+    if [ -f "${ZAPRET2_DIR:-/opt/zapret2}/lua/z2k-alert.lua" ]; then
+        rkn_tcp=$(ensure_rkn_failure_detector "$rkn_tcp" "z2k_fail_tls_alert")
+        # Пулы видео — замер 18.08.2026 на LG webOS. На заведомо нерабочей
+        # стратегии соединение поднималось, сервер отдавал 4482 байта и дальше
+        # слал один и тот же сегмент 15-16 раз. Ни RST, ни FIN, ни исходящих
+        # ретрансмитов — штатный детектор молчал (676 вызовов, ноль событий),
+        # страта стояла вечно, видео и превью не грузились.
+        youtube_tcp=$(ensure_rkn_failure_detector "$youtube_tcp" "z2k_fail_tls_alert")
+        youtube_gv_tcp=$(ensure_rkn_failure_detector "$youtube_gv_tcp" "z2k_fail_tls_alert")
+    else
+        echo "WARN: lua/z2k-alert.lua отсутствует — детекторы остаются чисто штатными" 1>&2
+    fi
+
+    # QUIC — детектор по молчанию, отдельным файлом и отдельным гейтом.
+    #
+    # Штатный детектор для QUIC не работает в принципе: он считает провалом
+    # «отослано много, принято мало», а мёртвый QUIC-поток шлёт МЕНЬШЕ пакетов,
+    # чем живой — браузер не ретрансмитит Initial, а уходит на TCP. Замер
+    # 19.08.2026 по 1646 потокам: ни один порог от 2 до 12 эти классы не
+    # разделяет. Различает их время, поэтому детектор ждёт ответа по таймеру.
+    if [ -f "${ZAPRET2_DIR:-/opt/zapret2}/lua/z2k-quic-silence.lua" ]; then
+        quic_udp=$(ensure_rkn_failure_detector "$quic_udp" "z2k_fail_quic_silence")
+    else
+        echo "WARN: lua/z2k-quic-silence.lua отсутствует — QUIC остаётся на штатном детекторе" 1>&2
+    fi
+
     # Генерировать NFQWS2_OPT в формате официального config
     local nfqws2_opt_lines=""
 
@@ -1667,6 +1728,18 @@ generate_nfqws2_opt_from_strategies() {
     http_rkn="--filter-tcp=80 $wl_excl --hostlist=${extra_strats_dir}/TCP/RKN/List.txt${rkn_http_extras} --in-range=-s5556 --payload=http_req,empty,http_reply --lua-desync=circular:fails=3:time=60:key=http_rkn:nld=2 --lua-desync=http_methodeol:payload=http_req:dir=out:strategy=1 --lua-desync=syndata:payload=http_req:dir=out:strategy=2 --lua-desync=multisplit:payload=http_req:dir=out:strategy=2 --lua-desync=hostfakesplit:payload=http_req:dir=out:ip_ttl=2:repeats=1:strategy=3 --lua-desync=fake:payload=http_req:dir=out:blob=fake_default_http:badsum:repeats=1:strategy=4 --lua-desync=fakedsplit:payload=http_req:dir=out:pos=method+2:badsum:strategy=5 --lua-desync=fake:payload=http_req:dir=out:blob=0x0E0E0F0E:tcp_md5:strategy=6 --lua-desync=multisplit:payload=http_req:dir=out:pos=host+1:seqovl=2:strategy=6 --lua-desync=fake:payload=http_req:dir=out:blob=fake_default_http:badsum:repeats=1:strategy=7 --lua-desync=multisplit:payload=http_req:dir=out:pos=method+2:strategy=7 --lua-desync=fake:payload=http_req:dir=out:blob=fake_default_http:badsum:repeats=1:strategy=8 --lua-desync=fakedsplit:payload=http_req:dir=out:pos=method+2:ip_autottl=2,1-64:badsum:strategy=8 --in-range=x --new"
 
     # http_rkn — тот же штатный детектор: ретрансмиссии, RST, DPI-редирект.
+    # Обёртка нужна и здесь. Пул объявляется НИЖЕ блока проводки TLS-пулов, и
+    # до 19.08.2026 его туда просто забыли добавить: http_rkn оставался на голом
+    # standard_failure_detector без единого гварда. Цена — apple.com уехал с
+    # рабочей первой стратегии на вторую на живом трафике:
+    #   standard_failure_detector: incoming RST s524 in range s4096   x13/мин
+    # RST после 524 байт ответа — это сервер закрылся сам, а не DPI. Обёртка
+    # отсеивает такие по TTL и по живости хоста; исходящий ретрансмит она
+    # пропускает в штатный детектор на http_req ровно так же, как на
+    # ClientHello, поэтому детект молчаливого дропа не теряется.
+    if [ -f "${ZAPRET2_DIR:-/opt/zapret2}/lua/z2k-alert.lua" ]; then
+        http_rkn=$(ensure_rkn_failure_detector "$http_rkn" "z2k_fail_tls_alert")
+    fi
     add_hostlist_line "${extra_strats_dir}/TCP/RKN/List.txt" "$http_rkn"
 
     # --------------------------------------------------------------------------
@@ -1932,8 +2005,6 @@ create_official_config() {
     local saved_TG_PROXY_USER_DISABLED="0"
     local saved_ENABLED="1"
     local saved_Z2K_CIRCULAR_RESET="1"
-    local saved_Z2K_SILENCE_DETECT="1"
-    local saved_Z2K_SILENCE_SECONDS="5"
     local saved_Z2K_PADENCAP="1"
     local saved_Z2K_NFQWS2_TEMPLATES="1"
     local saved_Z2K_INJECT_TLS_MODS="0"
@@ -1983,10 +2054,6 @@ create_official_config() {
         # Z2K_CIRCULAR_RESET — RST ретрансмиттеру после фиксации неудачи
         # (см. ensure_circular_doc_args). Умолчание 1, переживает регенерацию.
         saved_Z2K_CIRCULAR_RESET=$(safe_config_read "Z2K_CIRCULAR_RESET" "$config_file" "1")
-        # Детектор молчания и его порог: выключенный человеком детектор не
-        # должен воскресать при каждой пересборке конфига.
-        saved_Z2K_SILENCE_DETECT=$(safe_config_read "Z2K_SILENCE_DETECT" "$config_file" "1")
-        saved_Z2K_SILENCE_SECONDS=$(safe_config_read "Z2K_SILENCE_SECONDS" "$config_file" "5")
         saved_Z2K_PADENCAP=$(safe_config_read "Z2K_PADENCAP" "$config_file" "1")
         saved_Z2K_NFQWS2_TEMPLATES=$(safe_config_read "Z2K_NFQWS2_TEMPLATES" "$config_file" "1")
         saved_Z2K_INJECT_TLS_MODS=$(safe_config_read "Z2K_INJECT_TLS_MODS" "$config_file" "0")
@@ -2351,15 +2418,6 @@ TG_PROXY_USER_DISABLED=${saved_TG_PROXY_USER_DISABLED}
 # circular, документация nfqws2). 1 — включено; 0 — откат, если на линии
 # RST рвёт живые потоки.
 Z2K_CIRCULAR_RESET=${saved_Z2K_CIRCULAR_RESET}
-
-# Детектор «сервер молчит» (files/lua/z2k-silence.lua, решение 11.09.2026).
-# Штатные признаки провала — только активные: ретрансмиссия, входящий RST,
-# DPI-редирект. Самый частый класс блока не даёт ни одного: сервер
-# подтверждает запрос и молчит, ротация стоит вечно. Детектор ждёт ответа
-# Z2K_SILENCE_SECONDS секунд и, не дождавшись, засчитывает провал.
-# 0 — выключить, вернуться к чисто штатным признакам.
-Z2K_SILENCE_DETECT=${saved_Z2K_SILENCE_DETECT}
-Z2K_SILENCE_SECONDS=${saved_Z2K_SILENCE_SECONDS}
 
 # TLS extension auto-injection master switch (default 0, 2026-05-03):
 # выключено по дефолту после field-проверки — auto-injection

@@ -72,10 +72,24 @@ LUA_DOWNLOADED=$(grep -oE '\$\{GITHUB_RAW\}/files/lua/[a-zA-Z_0-9-]+\.lua' z2k.s
 #    z2k_fetch'нный openwrt-embedded.tar.gz, not z2k.sh download_init_script):
 TARBALL_WHITELIST="lua/zapret-lib.lua lua/zapret-antidpi.lua lua/zapret-auto.lua"
 
+# 3b) ПЕРЕХОДНЫЕ ЗАГРУЗКИ: модуль снят из поставки, но init его ещё грузит,
+#     если файл остался на роутере от прошлой версии.
+#
+#     Зачем так. Патч заменяет файлы, но не удаляет, и не перегенерирует
+#     конфиг раньше, чем положит файлы. Пока конфиг ссылается на детектор по
+#     имени, а модуля с этим именем нет, движок валится в error() НА КАЖДОМ
+#     ПАКЕТЕ профиля — обход становится пустышкой при зелёном статусе службы.
+#     Поэтому загрузка остаётся под `[ -f ]` до первой перегенерации конфига,
+#     а полная установка (z2k.sh) файл сносит.
+#
+#     Строка отсюда убирается вместе со строкой из S99zapret2.new — в релизе,
+#     следующем за тем, где модуль сняли.
+TRANSITIONAL_WHITELIST="lua/z2k-silence.lua"
+
 # 4) Diff
 MISSING=""
 for f in $LUA_USED; do
-    case " $LUA_DOWNLOADED $TARBALL_WHITELIST " in
+    case " $LUA_DOWNLOADED $TARBALL_WHITELIST $TRANSITIONAL_WHITELIST " in
         *" $f "*) ;;
         *) MISSING="$MISSING $f" ;;
     esac
