@@ -1,8 +1,8 @@
 {
   "schema": 1,
   "branch": "z2k-enhanced",
-  "seq": 87,
-  "current": "p-84.4",
+  "seq": 88,
+  "current": "p-84.5",
   "install_map": {
   "files/000-zapret2.sh": ["/opt/etc/ndm/netfilter.d/000-zapret2.sh"],
   "files/S99zapret2.new": ["/opt/etc/init.d/S99zapret2"],
@@ -183,7 +183,7 @@
   "files/lua/z2k-fooling-ext.lua": "4b5efb6672f54dbe4d04440066f06e84d92e43c8534cdfb88d136028e6d8231f",
   "files/lua/z2k-modern-core.lua": "5f4b5312e69447b887d868be74b756d103515eca59765f9155a358bf96da08c7",
   "files/lua/z2k-range-rand.lua": "073c24d9133484b9f2282f1e398b5963eb577b483c1cab8c29cfd6e7bf8acd9a",
-  "files/lua/z2k-silence.lua": "2e53211e4a25bd22ee264c2d39fc4222817f35ba57065230efb16394e7d0e541",
+  "files/lua/z2k-silence.lua": "739ee1c2b02a1c6a7867311be4a3c10756c9df3bdb0551d848833ede32a60de7",
   "files/lua/z2k-state-persist.lua": "364eaecc858c004733eb5d6cf9cdf51ae31854b7dfa1d00caa8198a9ea21adaf",
   "files/lua/z2k-tcp16.lua": "340002edff2035d1882431802cc0920b5d2faf7c733613a1051415b4816fdf9d",
   "files/ndm/90-z2k-tg-redirect.sh": "ca6de843d4fd820a58ad0fc76566b7640011d7f6161d31b5b84720197f0fe19a",
@@ -257,7 +257,7 @@
   "webpanel/www/fonts/FiraSans-600-latin.woff2": "f3cc7b2756c566cf8172bfd269d805c4a1eb953f6b6ce8bf2b2ddf49c5422189",
   "webpanel/www/fonts/FiraSans-700-cyrillic.woff2": "42a8013e902099b563e434d3ccb3bed87ff6d6af8d80fe51ff203f2ac487673b",
   "webpanel/www/fonts/FiraSans-700-latin.woff2": "811e73619cc2909792e8fa134c8d1ed714b898310dd4cc218fc29e40a5dc2890",
-  "webpanel/www/index.html": "3571070c6932dc1c760a4520000dd2b68c0677b45a2341f8894203cf9dae1672",
+  "webpanel/www/index.html": "2f0ff5c383044f1787fe70a60de8f6604ab9be473c90ee73098d7c90268880d6",
   "webpanel/www/js/chrome.js": "3e2217758cde6d87f4809aaf65c4aafca582b936d9c53b19abb4adac1479fdef",
   "webpanel/www/js/core/api.js": "eaa798b49c02373a1cffcdee447587f9969194323dd5471ac74a07d4af7b235f",
   "webpanel/www/js/core/auth.js": "7afe5b139737783402f45fb654b9383b24d68779aae93a0f5f1847608252ad8c",
@@ -540,6 +540,7 @@
 {"v": "r-84.1", "type": "reinstall", "ts": "2026-09-10T20:50:56Z", "ref": "r-84.1", "desc": "Исправлен обход после r-84: поддельные приветствия снова маскируются как раньше, и сайты, которые перестали открываться, открываются. Проверка обрыва на 16 КБ получила свои списки и подробный ход в панели, карточка на дашборде стала компактнее. Обновление полное.", "changed_files": ["webpanel/www/index.html", "files/lua/z2k-tcp16.lua", "files/z2k-diag.sh", "files/z2k-tcp16-probe.sh", "lib/auto_update.sh", "lib/config_official.sh", "lib/install.sh", "lib/utils.sh", "strats_new2.txt", "webpanel/www/js/pages/dashboard.js", "webpanel/www/style.css", "UPDATES.json"], "steps": ["regen-strategies", "regen-config", "validate-config", "restart-service"], "full_install": false},
 {"v": "p-84.2", "type": "patch", "ts": "2026-09-10T21:51:07Z", "ref": "p-84.2", "desc": "Проверка DNS в панели стала честнее: каждый сервер опрашивается по его собственному адресу, а не через резолвер роутера, заворот обычного DNS показывается отдельно, а «умные» DNS-сервисы, подставляющие свои прокси-адреса вместо сайтов, теперь видны. Сводка диагностики показывает снимок этой проверки с его возрастом.", "changed_files": ["webpanel/www/index.html", "files/z2k-diag.sh", "files/z2k-dns-check.sh", "webpanel/www/js/pages/diag.js", "UPDATES.json"], "steps": [], "full_install": false},
 {"v": "p-84.3", "type": "patch", "ts": "2026-09-10T22:12:45Z", "ref": "p-84.3", "desc": "Проверка DNS в панели снова показывает ход по каждому серверу сразу, а не молчит до конца, и стала вдвое быстрее.", "changed_files": ["webpanel/www/index.html", "files/z2k-dns-check.sh", "UPDATES.json"], "steps": [], "full_install": false},
-{"v": "p-84.4", "type": "patch", "ts": "2026-09-11T07:10:52Z", "ref": "p-84.4", "desc": "Автоподбор стратегий теперь замечает и такую блокировку, при которой сайт не отвечает вовсе: раньше в этом случае подбор замирал на первой стратегии и страница просто висела до таймаута. Появились настройки Z2K_SILENCE_DETECT и Z2K_SILENCE_SECONDS.", "changed_files": ["webpanel/www/index.html", "files/S99zapret2.new", "files/lua/z2k-silence.lua", "files/z2k-config-validator.sh", "lib/config_official.sh", "z2k.sh", "UPDATES.json"], "steps": ["regen-config", "validate-config", "restart-service"], "full_install": false}
+{"v": "p-84.4", "type": "patch", "ts": "2026-09-11T07:10:52Z", "ref": "p-84.4", "desc": "Автоподбор стратегий теперь замечает и такую блокировку, при которой сайт не отвечает вовсе: раньше в этом случае подбор замирал на первой стратегии и страница просто висела до таймаута. Появились настройки Z2K_SILENCE_DETECT и Z2K_SILENCE_SECONDS.", "changed_files": ["webpanel/www/index.html", "files/S99zapret2.new", "files/lua/z2k-silence.lua", "files/z2k-config-validator.sh", "lib/config_official.sh", "z2k.sh", "UPDATES.json"], "steps": ["regen-config", "validate-config", "restart-service"], "full_install": false},
+{"v": "p-84.5", "type": "patch", "ts": "2026-09-11T08:33:29Z", "ref": "p-84.5", "desc": "Автоподбор стратегий доведён до конца: теперь он реагирует и когда ответ сайта начался и оборвался, и когда часть запросов к сайту проходит, а часть режется — раньше в обоих случаях подбор оставался на первой стратегии.", "changed_files": ["webpanel/www/index.html", "files/lua/z2k-silence.lua", "UPDATES.json"], "steps": ["restart-service"], "full_install": false}
   ]
 }
