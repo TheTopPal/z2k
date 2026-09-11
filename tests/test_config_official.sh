@@ -776,6 +776,90 @@ test_corrupt_custom_strategy healthy \
     "--filter-tcp=443 --filter-l7=tls --lua-desync=fake:blob=z2k_custom_marker:strategy=1" \
     "0" "исправный пользовательский файл принимается"
 
+# ==============================================================================
+# TEST: пользовательские профили (lists/custom-profiles/*.conf)
+# Отдельный профиль под хост со своей фиксированной стратегией, вставляется
+# ПЕРЕД категорийными (nfqws2 = first-match). В отличие от custom-strategies,
+# который переопределяет существующий пул, — ДОБАВЛЯЕТ новый профиль.
+# ==============================================================================
+printf "\n--- пользовательские профили: lists/custom-profiles ---\n"
+
+_seed_custom_profile() {
+    mkdir -p "$1/lists/custom-profiles"
+    printf '%s\n' \
+        '# updates.discord.com: фиксированный профиль' \
+        '--filter-tcp=443 --filter-l7=tls' \
+        '--hostlist-domains=updates.discord.com' \
+        '--lua-desync=fake:payload=tls_client_hello:dir=out:blob=z2k_real_www_microsoft_com:repeats=6' \
+        > "$1/lists/custom-profiles/discord-updates.conf"
+}
+
+OUT_CP=$(run_generator "custom-profiles" "" "_seed_custom_profile")
+assert_contains "custom-profiles: профиль попал в NFQWS2_OPT" "updates.discord.com" "$OUT_CP"
+
+# custom-профиль обязан стоять ДО арма rkn_tcp — иначе first-match отдаст
+# updates.discord.com категорийному rkn, а не нашему профилю.
+_flat_cp=$(printf '%s\n' "$OUT_CP" | awk -f "$SCRIPT_DIR/tests/lib/nfqws2_flatten.awk")
+_pos_cp=$(printf '%s\n' "$_flat_cp" | grep -n "updates.discord.com" | head -1 | cut -d: -f1)
+_pos_rkn=$(printf '%s\n' "$_flat_cp" | grep -n "key=rkn_tcp" | head -1 | cut -d: -f1)
+if [ -n "$_pos_cp" ] && [ -n "$_pos_rkn" ] && [ "$_pos_cp" -lt "$_pos_rkn" ]; then
+    TESTS_PASSED=$((TESTS_PASSED+1))
+    printf "[PASS] custom-profiles: профиль раньше rkn (%s < %s)\n" "$_pos_cp" "$_pos_rkn"
+else
+    TESTS_FAILED=$((TESTS_FAILED+1))
+    printf "[FAIL] custom-profiles: профиль НЕ раньше rkn (cp=%s rkn=%s)\n" "$_pos_cp" "$_pos_rkn"
+fi
+
+# Комментарий из .conf не должен утечь в опции.
+assert_not_contains "custom-profiles: комментарий вычищен" "фиксированный профиль" "$OUT_CP"
+
+# Без каталога custom-profiles — токена быть не должно (нулевая регрессия).
+OUT_NOCP=$(run_generator "no-custom-profiles" "" "")
+assert_not_contains "custom-profiles: без каталога токена нет" "updates.discord.com" "$OUT_NOCP"
+
+# Fail-closed: гнилой .conf роняет генерацию, старый конфиг цел (зеркало
+# test_corrupt_custom_strategy, но для custom-profiles).
+test_corrupt_custom_profile() {
+    local variant="$1" body="$2" want_rc="$3" desc="$4"
+    local root="${MOCK_DIR}/cp-$variant"
+    rm -rf "$root"
+    mkdir -p "$root/extra_strats/TCP/YT" \
+             "$root/extra_strats/TCP/YT_GV" \
+             "$root/extra_strats/TCP/RKN" \
+             "$root/extra_strats/UDP/YT" \
+             "$root/lists/custom-profiles"
+    echo "youtube.com"     > "$root/extra_strats/TCP/YT/List.txt"
+    echo "googlevideo.com" > "$root/extra_strats/TCP/YT_GV/List.txt"
+    echo "youtube.com"     > "$root/extra_strats/UDP/YT/List.txt"
+    echo "rutracker.org"   > "$root/extra_strats/TCP/RKN/List.txt"
+    for f in TCP/YT TCP/YT_GV TCP/RKN; do
+        echo "--filter-tcp=443 --filter-l7=tls --lua-desync=circular:fails=3:time=60:key=x --lua-desync=fake:strategy=1" \
+            > "$root/extra_strats/$f/Strategy.txt"
+    done
+    echo "--filter-udp=443 --filter-l7=quic --lua-desync=circular:fails=3:time=60:key=yt_quic --lua-desync=fake:strategy=1" \
+        > "$root/extra_strats/UDP/YT/Strategy.txt"
+    if [ "$variant" = "corrupt" ]; then
+        awk 'BEGIN{for(i=0;i<64;i++)printf "%c",255}' > "$root/lists/custom-profiles/bad.conf"
+    else
+        printf '%s\n' "$body" > "$root/lists/custom-profiles/good.conf"
+    fi
+    printf 'ENABLED=1\nCUSTOM_SENTINEL=1\n' > "$root/config"
+    local rc
+    ( ZAPRET2_DIR="$root" create_official_config "$root/config" >/dev/null 2>&1 ); rc=$?
+    assert_eq "cp-$variant: rc — $desc" "$want_rc" "$rc"
+    if [ "$want_rc" = "1" ]; then
+        assert_contains     "cp-$variant: original config preserved" "CUSTOM_SENTINEL" "$(cat "$root/config")"
+        assert_not_contains "cp-$variant: no NFQWS2_OPT from garbage" "NFQWS2_OPT=" "$(cat "$root/config")"
+    else
+        assert_contains "cp-$variant: профиль применён" "cp_marker.example" "$(cat "$root/config")"
+    fi
+    rm -rf "$root"
+}
+test_corrupt_custom_profile corrupt "" "1" "порченый custom-profile роняет генерацию"
+test_corrupt_custom_profile healthy \
+    "--filter-tcp=443 --filter-l7=tls --hostlist-domains=cp_marker.example --lua-desync=fake:blob=z2k_real_www_microsoft_com:strategy=1" \
+    "0" "исправный custom-profile принимается"
+
 rm -rf "$MOCK_DIR"
 
 printf "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"

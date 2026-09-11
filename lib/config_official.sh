@@ -129,6 +129,32 @@ generate_nfqws2_opt_from_strategies() {
         cat "$_f"
     }
 
+    z2k_custom_profiles() {
+        # Печатает НЕЗАВИСИМЫЕ пользовательские профили — по одному на .conf в
+        # lists/custom-profiles/, каждый со своим завершающим --new. В отличие от
+        # z2k_custom_strategy (переопределяет существующий пул) — ДОБАВЛЯЕТ профиль.
+        # Вызывающая сторона кладёт вывод в начало NFQWS2_OPT: nfqws2 = first-match,
+        # поэтому профиль перехватывает свои хосты раньше категорийных.
+        # Fail-closed: гнилой файл => rc=1, генерация останавливается (проверка
+        # _z2k_file_sane продублирована в раннем sweep ниже, здесь — на месте чтения).
+        local _cp_dir="${ZAPRET2_DIR:-/opt/zapret2}/lists/custom-profiles"
+        [ -d "$_cp_dir" ] || return 0
+        local _f
+        for _f in $(ls "$_cp_dir"/*.conf 2>/dev/null | sort); do
+            [ -s "$_f" ] || continue
+            if ! _z2k_file_sane "$_f"; then
+                print_error "Пользовательский профиль повреждён (бинарный мусор): $_f"
+                print_error "Генерация конфига остановлена, старый конфиг сохранён."
+                return 1
+            fi
+            # Комментарии и пустые строки — вон; остальное в одну строку + --new.
+            awk '{ sub(/\r$/,""); sub(/^[[:space:]]*#.*$/,"") } NF { printf "%s ", $0 }' "$_f" \
+                | sed 's/[[:space:]]*$//'
+            printf ' --new\n'
+        done
+        return 0
+    }
+
     # Пользовательские стратегии лежат на ТОЙ ЖЕ флешке и ПЕРЕКРЫВАЮТ пуловые
     # (см. присваивания ниже), поэтому одной проверки пуловых файлов мало: гнилой
     # блок под custom-strategies вернул бы ровно то же зависание через чёрный ход.
@@ -143,6 +169,19 @@ generate_nfqws2_opt_from_strategies() {
             return 1
         fi
     done
+
+    # Пользовательские профили — та же ранняя fail-closed проверка. Каталога
+    # может не быть вовсе (фича опциональна) — тогда пропускаем.
+    if [ -d "${ZAPRET2_DIR:-/opt/zapret2}/lists/custom-profiles" ]; then
+        for _cp_check in "${ZAPRET2_DIR:-/opt/zapret2}"/lists/custom-profiles/*.conf; do
+            [ -s "$_cp_check" ] || continue
+            if ! _z2k_file_sane "$_cp_check"; then
+                print_error "Пользовательский профиль повреждён (бинарный мусор): $_cp_check"
+                print_error "Генерация конфига остановлена, старый конфиг сохранён. Исправьте или удалите файл."
+                return 1
+            fi
+        done
+    fi
 
     # Прочитать стратегии из файлов категорий
     if [ -f "${extra_strats_dir}/TCP/YT/Strategy.txt" ]; then
@@ -1325,6 +1364,16 @@ generate_nfqws2_opt_from_strategies() {
             print_warning "Hostlist missing or empty: $list_path — profile skipped"
         fi
     }
+
+    # Пользовательские профили идут ПЕРВЫМИ в NFQWS2_OPT. nfqws2 = first-match:
+    # профиль перехватывает свои хосты раньше категорийных (напр.
+    # updates.discord.com раньше rkn). Fail-closed: гнилой .conf уже отсеян
+    # ранним sweep выше, здесь ошибка чтения тоже останавливает генерацию.
+    _custom_profiles=$(z2k_custom_profiles) || return 1
+    if [ -n "$_custom_profiles" ]; then
+        nfqws2_opt_lines="${_custom_profiles}
+"
+    fi
 
 
     # Общее для профилей объявляем ОДИН раз.
