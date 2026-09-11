@@ -1,8 +1,8 @@
 {
   "schema": 1,
   "branch": "z2k-enhanced",
-  "seq": 89,
-  "current": "p-84.6",
+  "seq": 90,
+  "current": "p-84.7",
   "install_map": {
   "files/000-zapret2.sh": ["/opt/etc/ndm/netfilter.d/000-zapret2.sh"],
   "files/S99zapret2.new": ["/opt/etc/init.d/S99zapret2"],
@@ -49,10 +49,11 @@
   "files/lists/warp-endpoints.txt": ["/opt/zapret2/files/lists/warp-endpoints.txt", "/opt/zapret2/lists/warp-endpoints.txt"],
   "files/lists/youtube_ips.txt": ["/opt/zapret2/files/lists/youtube_ips.txt", "/opt/zapret2/lists/youtube_ips.txt"],
   "files/lists/youtube_ips6.txt": ["/opt/zapret2/files/lists/youtube_ips6.txt", "/opt/zapret2/lists/youtube_ips6.txt"],
+  "files/lua/z2k-alert.lua": ["/opt/zapret2/lua/z2k-alert.lua"],
   "files/lua/z2k-fooling-ext.lua": ["/opt/zapret2/lua/z2k-fooling-ext.lua"],
   "files/lua/z2k-modern-core.lua": ["/opt/zapret2/lua/z2k-modern-core.lua"],
+  "files/lua/z2k-quic-silence.lua": ["/opt/zapret2/lua/z2k-quic-silence.lua"],
   "files/lua/z2k-range-rand.lua": ["/opt/zapret2/lua/z2k-range-rand.lua"],
-  "files/lua/z2k-silence.lua": ["/opt/zapret2/lua/z2k-silence.lua"],
   "files/lua/z2k-state-persist.lua": ["/opt/zapret2/lua/z2k-state-persist.lua"],
   "files/lua/z2k-tcp16.lua": ["/opt/zapret2/lua/z2k-tcp16.lua"],
   "files/ndm/90-z2k-tg-redirect.sh": ["/opt/zapret2/ndm/90-z2k-tg-redirect.sh"],
@@ -136,7 +137,7 @@
   },
   "files_sha256": {
   "files/000-zapret2.sh": "b256194eacf0f89b247cb4f4c467d552afe03ebbc4879b79308eed5f914d385d",
-  "files/S99zapret2.new": "bd00f020836462cea7457883e2aa10df386a3e52edfe4ea55df871f68154d00a",
+  "files/S99zapret2.new": "8615a59a1d07166d4eccb4e156c42f0f48160cbee57d6cbdc25fa25146fa4d7b",
   "files/etc/z2k-roots.pem": "a6cf5a695274d4f36b401cc62183895af11e68b02417638a070465c77f4caf00",
   "files/etc/z2k-update-pub.pem": "1041720fa0dff53e2babbf547a705c2f43c30bca2c6ca2ddf7144cfe3b470a01",
   "files/fake/quic_1.bin": "f4589c57749f956bb30538197a521d7005f8b0a8723b4707e72405e51ddac50a",
@@ -180,10 +181,11 @@
   "files/lists/warp-endpoints.txt": "a9b033dcbd09939256d8783d3a9c70589165a17d2835c44c63b0665b372f28e0",
   "files/lists/youtube_ips.txt": "e3118339de975d0a13c17c0cbb99e4f968a217dd579f30f94f71bd37cd2180e7",
   "files/lists/youtube_ips6.txt": "d51f5e44b989b503729ae35b79cf80adf7e47ac96fde42d785e0ba6e501c28cb",
+  "files/lua/z2k-alert.lua": "984c57b7627bb74fc7ad0be4709cb0d1ef562ed6f1e5dd9b70256a159adb8fa6",
   "files/lua/z2k-fooling-ext.lua": "4b5efb6672f54dbe4d04440066f06e84d92e43c8534cdfb88d136028e6d8231f",
   "files/lua/z2k-modern-core.lua": "5f4b5312e69447b887d868be74b756d103515eca59765f9155a358bf96da08c7",
+  "files/lua/z2k-quic-silence.lua": "3080b592cee163c99eb60ebc1a074fd66f5d04d822821d066a358c455e50dde3",
   "files/lua/z2k-range-rand.lua": "073c24d9133484b9f2282f1e398b5963eb577b483c1cab8c29cfd6e7bf8acd9a",
-  "files/lua/z2k-silence.lua": "beaf3881f665b0d9253a065372b7943f416583c73022c56a318af72604de57cc",
   "files/lua/z2k-state-persist.lua": "364eaecc858c004733eb5d6cf9cdf51ae31854b7dfa1d00caa8198a9ea21adaf",
   "files/lua/z2k-tcp16.lua": "340002edff2035d1882431802cc0920b5d2faf7c733613a1051415b4816fdf9d",
   "files/ndm/90-z2k-tg-redirect.sh": "ca6de843d4fd820a58ad0fc76566b7640011d7f6161d31b5b84720197f0fe19a",
@@ -213,7 +215,7 @@
   "files/z2k-warp.sh": "b77ef2caca56436d6669f001b4c8479bbe8e935c3f4c8ebe964bf047f1c7e2dd",
   "lib/auto_update.sh": "198a97bf02c4f19eb77460df70f05413fed07d2268bdaa9827ff3cc9e8773180",
   "lib/config.sh": "e08589c20e3762e5ec7019abd133efc7479c4f396d5997130d657ee393731c8f",
-  "lib/config_official.sh": "dc99652700791404fd1b0e6209e2c64a45b1814373be809b137add21fa14d43a",
+  "lib/config_official.sh": "4d186485c2a15a7f260343d8272922d8518897916b28ea65157991e7032e4cc2",
   "lib/install.sh": "0984cb30ae5577c7e2168e50d71ce9e49ba53173bba0972d7ffbc07b9b88ef5a",
   "lib/menu.sh": "74ef69e68834a1119e159458be00c2449b4a8b51035cde3b2c70c7bfaee9cdd6",
   "lib/strategies.sh": "68f7e398d9865a088d70fb6f9739c66ab6adcfce4e88c1973b128e3ceb7abbef",
@@ -257,7 +259,7 @@
   "webpanel/www/fonts/FiraSans-600-latin.woff2": "f3cc7b2756c566cf8172bfd269d805c4a1eb953f6b6ce8bf2b2ddf49c5422189",
   "webpanel/www/fonts/FiraSans-700-cyrillic.woff2": "42a8013e902099b563e434d3ccb3bed87ff6d6af8d80fe51ff203f2ac487673b",
   "webpanel/www/fonts/FiraSans-700-latin.woff2": "811e73619cc2909792e8fa134c8d1ed714b898310dd4cc218fc29e40a5dc2890",
-  "webpanel/www/index.html": "a8a4678fd04f85611c9e849190a70a0da65161d05d165f6817acab1c07312345",
+  "webpanel/www/index.html": "4c09664a054b87c3f4262e00cd277adc1ef50a848a3dd0a802b10ff597dc630f",
   "webpanel/www/js/chrome.js": "3e2217758cde6d87f4809aaf65c4aafca582b936d9c53b19abb4adac1479fdef",
   "webpanel/www/js/core/api.js": "eaa798b49c02373a1cffcdee447587f9969194323dd5471ac74a07d4af7b235f",
   "webpanel/www/js/core/auth.js": "7afe5b139737783402f45fb654b9383b24d68779aae93a0f5f1847608252ad8c",
@@ -300,7 +302,7 @@
   "z2k-warpd/builds/z2k-warpd-linux-ppc64": "d8c3653aead033ef697323d7b860210e1c92ad0f8fa39e5a2a2af3919d1c5a64",
   "z2k-warpd/builds/z2k-warpd-linux-riscv64": "161d5a285314d96a79251d02beb4a33fa1d5e6a6483f9829cc624833bc680e6b",
   "z2k-warpd/builds/z2k-warpd-linux-x86": "310fc61fcb765e565e40cb3d4e78929a7ee5cdb8a5926baf4461b2e25c63ae37",
-  "z2k.sh": "ea0a20c837a0c2a8968c8459ce13cc143f9d1a6a820943c53737c79f8c29d919"
+  "z2k.sh": "43fd2e3f8b21db718d2e6b23705dc15d7eb68ee60a48b59729ff5602af96df42"
   },
   "history": [
 {"v": "r-1", "type": "reinstall", "ts": "2026-05-04T00:00:00Z", "ref": "vk-whitelist-ext", "desc": "Extend whitelist with VK service/CDN domains (vkuseraudio/vkuservideo/vk-cdn/mvk/vkpay/vkforms/etc) — fixes broken photo comments and other XHR over non-vk.com VK domains", "changed_files": ["lib/config.sh"]},
@@ -542,6 +544,7 @@
 {"v": "p-84.3", "type": "patch", "ts": "2026-09-10T22:12:45Z", "ref": "p-84.3", "desc": "Проверка DNS в панели снова показывает ход по каждому серверу сразу, а не молчит до конца, и стала вдвое быстрее.", "changed_files": ["webpanel/www/index.html", "files/z2k-dns-check.sh", "UPDATES.json"], "steps": [], "full_install": false},
 {"v": "p-84.4", "type": "patch", "ts": "2026-09-11T07:10:52Z", "ref": "p-84.4", "desc": "Автоподбор стратегий теперь замечает и такую блокировку, при которой сайт не отвечает вовсе: раньше в этом случае подбор замирал на первой стратегии и страница просто висела до таймаута. Появились настройки Z2K_SILENCE_DETECT и Z2K_SILENCE_SECONDS.", "changed_files": ["webpanel/www/index.html", "files/S99zapret2.new", "files/lua/z2k-silence.lua", "files/z2k-config-validator.sh", "lib/config_official.sh", "z2k.sh", "UPDATES.json"], "steps": ["regen-config", "validate-config", "restart-service"], "full_install": false},
 {"v": "p-84.5", "type": "patch", "ts": "2026-09-11T08:33:29Z", "ref": "p-84.5", "desc": "Автоподбор стратегий доведён до конца: теперь он реагирует и когда ответ сайта начался и оборвался, и когда часть запросов к сайту проходит, а часть режется — раньше в обоих случаях подбор оставался на первой стратегии.", "changed_files": ["webpanel/www/index.html", "files/lua/z2k-silence.lua", "UPDATES.json"], "steps": ["restart-service"], "full_install": false},
-{"v": "p-84.6", "type": "patch", "ts": "2026-09-11T09:32:43Z", "ref": "p-84.6", "desc": "Выключенное автообновление больше не включается само после ручного обновления из панели — настройка теперь держится. Подбор стратегий перестал бесконечно перебирать список, когда сайт не открывается по причине, не связанной с обходом: пройдя список один раз, он останавливается и снова берётся за подбор, как только сайт отвечает.", "changed_files": ["webpanel/www/index.html", "files/lua/z2k-silence.lua", "files/z2k-auto-update.sh", "files/z2k-scheduler.sh", "UPDATES.json"], "steps": ["restart-service"], "full_install": false}
+{"v": "p-84.6", "type": "patch", "ts": "2026-09-11T09:32:43Z", "ref": "p-84.6", "desc": "Выключенное автообновление больше не включается само после ручного обновления из панели — настройка теперь держится. Подбор стратегий перестал бесконечно перебирать список, когда сайт не открывается по причине, не связанной с обходом: пройдя список один раз, он останавливается и снова берётся за подбор, как только сайт отвечает.", "changed_files": ["webpanel/www/index.html", "files/lua/z2k-silence.lua", "files/z2k-auto-update.sh", "files/z2k-scheduler.sh", "UPDATES.json"], "steps": ["restart-service"], "full_install": false},
+{"v": "p-84.7", "type": "patch", "ts": "2026-09-11T10:33:58Z", "ref": "p-84.7", "desc": "Подбор стратегий вернулся к прежней схеме проверки: восстановлены поправки, которые не дают менять стратегию там, где сайт на самом деле работает — ложный сброс соединения от фильтра, потеря пакета в уже открытой странице, ответ самого сайта. Убрана проверка по молчанию сайта, добавленная накануне: она листала список до конца на доменах, которые не открываются по причинам, к обходу отношения не имеющим.", "changed_files": ["webpanel/www/index.html", "files/S99zapret2.new", "files/lua/z2k-alert.lua", "files/lua/z2k-quic-silence.lua", "lib/config_official.sh", "z2k.sh", "UPDATES.json"], "steps": ["regen-config", "validate-config", "restart-service"], "full_install": false}
   ]
 }
