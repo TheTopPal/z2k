@@ -27,6 +27,16 @@ local function is(m, want, got) if want == got then ok(m) else no(m, want, got) 
 function DLOG() end
 b_debug = false
 TH_RST = 0x04
+TH_FIN = 0x01
+-- Битовые операции движка (C-функции nfqws2).
+function bitand(a, b)
+    local r, bit = 0, 1
+    while a > 0 and b > 0 do
+        if a % 2 == 1 and b % 2 == 1 then r = r + bit end
+        a = math.floor(a / 2); b = math.floor(b / 2); bit = bit * 2
+    end
+    return r
+end
 
 -- Штатный детектор: по умолчанию молчит, тест подменяет при необходимости.
 STD_VERDICT = false
@@ -93,12 +103,15 @@ local function out_req(pos)
     }
 end
 
--- Входящий пакет: data=true — с полезной нагрузкой, иначе голый ACK.
-local function in_pkt(data)
+-- Входящий пакет: data=true — сто байт нагрузки, число — столько байт,
+-- иначе голый ACK. flags — флаги TCP (для FIN).
+local function in_pkt(data, flags)
+    local n = 0
+    if data == true then n = 100 elseif type(data) == "number" then n = data end
     return {
         outgoing = false,
-        dis = { tcp = {}, payload = data and string.rep("y", 100) or "" },
-        track = {}, arg = { key = "rkn_tcp" }, _s = 1,
+        dis = { tcp = { th_flags = flags or 0x10 }, payload = string.rep("y", n) },
+        track = {}, arg = { key = "rkn_tcp", inseq = "4096" }, _s = 1,
     }
 end
 
@@ -183,9 +196,9 @@ do
     reset_state()
     local crec = {}
     arm(crec)
-    z2k_fail_silence(in_pkt(true), crec)
+    z2k_fail_silence(in_pkt(5000), crec)   -- обмен состоялся: больше порога удачи
     fire_one()
-    is("сервер ответил данными — провала нет", 0, COUNTER_CALLS)
+    is("сервер ответил полностью — провала нет", 0, COUNTER_CALLS)
 
     reset_state()
     crec = {}
@@ -285,7 +298,7 @@ do
     crec = {}
     d = out_req(); d.arg.reset = true
     arm(crec, d)
-    z2k_fail_silence(in_pkt(true), crec)  -- сервер ответил
+    z2k_fail_silence(in_pkt(5000), crec)  -- сервер ответил полностью
     fire_one()
     is("ответившему серверу RST не шлём", 0, #SENT)
 end
@@ -345,6 +358,50 @@ do
     arm(crec)                              -- запрос, следом голый ACK сервера
     fire_one()
     is("подтверждение без данных — провал", 1, COUNTER_CALLS)
+end
+
+-- ----- 10. ответ начался и встал — тоже провал ------------------------------
+--
+-- Стенд 11.09.2026: если сайт успел прислать кусок ответа, дальше тишина
+-- детектором не считалась, и стратегия стояла. Это и есть «где-то завелось,
+-- где-то нет»: часть блокировок пропускает начало ответа и режет поток
+-- дальше. Порог, после которого соединение считается состоявшимся, — тот же,
+-- что у штатного детектора удачи: inseq (по умолчанию 4096 байт).
+do
+    reset_state()
+    local crec = {}
+    arm(crec)
+    z2k_fail_silence(in_pkt(80), crec)        -- ServerHello ушёл, дальше тишина
+    fire_one()
+    is("начатый и вставший ответ — провал", 1, COUNTER_CALLS)
+
+    reset_state()
+    crec = {}
+    arm(crec)
+    z2k_fail_silence(in_pkt(5000), crec)      -- ответ больше порога удачи
+    fire_one()
+    is("полный ответ — провала нет", 0, COUNTER_CALLS)
+
+    -- Ожидание продлевается КАЖДЫМ куском: медленный сервер, отдающий ответ
+    -- частями, не должен получить провал, пока данные идут.
+    reset_state()
+    crec = {}
+    arm(crec)
+    local t_before
+    for _, t in pairs(TIMERS) do t_before = t end
+    z2k_fail_silence(in_pkt(80), crec)
+    local restarted = false
+    for _, t in pairs(TIMERS) do restarted = (t ~= t_before) or t.restarted end
+    is("кусок ответа продлевает ожидание", true, restarted ~= false)
+    is("и второго таймера не появляется", 1, count_timers())
+
+    -- Сервер закрыл соединение сам: обмен состоялся, судить не о чем.
+    reset_state()
+    crec = {}
+    arm(crec)
+    z2k_fail_silence(in_pkt(80, 0x11), crec)  -- данные с FIN
+    fire_one()
+    is("сервер закрыл соединение — провала нет", 0, COUNTER_CALLS)
 end
 
 printf = nil

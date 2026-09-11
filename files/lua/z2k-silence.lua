@@ -11,6 +11,13 @@ local function silence_seconds(desync)
     return v
 end
 
+-- Сколько байт ответа считать состоявшимся обменом. Тот же порог, что у
+-- штатного детектора удачи (inseq): «сервер прислал больше — соединение
+-- рабочее». Ниже него ответ мог начаться и встать, а это тоже блокировка.
+local function success_bytes(desync)
+    return tonumber(desync.arg.inseq) or 4096
+end
+
 local timer_seq = 0
 local timers_active = 0
 
@@ -41,6 +48,7 @@ end
 function z2k_silence_fire(name, d)
     local crec, hrec = d.crec, d.hrec
     timers_active = timers_active - 1
+    crec.z2k_sil = nil
 
     if crec.z2k_answered then return end
 
@@ -96,14 +104,41 @@ function z2k_fail_silence(desync, crec)
     -- принято не более M»), а молчание между пачками там обычное дело.
     if not desync.dis.tcp then return false end
 
-    -- ВХОДЯЩИЕ: отмечаем, что они до нас доходят, и был ли в них ответ.
+    -- ВХОДЯЩИЕ: отмечаем, что они до нас доходят, и считаем объём ответа.
     --
-    -- Ответом считаются только ДАННЫЕ. Голый ACK — это и есть картина блока:
-    -- запрос до сервера дошёл, он его подтвердил, а ответ вырезан на обратном
-    -- пути.
+    -- Голый ACK ответом не считается: это и есть картина блока — запрос до
+    -- сервера дошёл, он его подтвердил, а ответ вырезан на обратном пути.
+    --
+    -- Данные ожидание ПРОДЛЕВАЮТ, но не отменяют: часть блокировок пропускает
+    -- начало ответа и режет поток дальше (стенд 11.09.2026), и тогда «ответ
+    -- был» означало бы «провала не будет никогда». Отменяем ожидание, только
+    -- когда обмен состоялся: получено больше порога удачи или сервер сам
+    -- закрыл соединение.
     if not desync.outgoing then
         crec.z2k_in_seen = true
-        if desync.dis.payload and #desync.dis.payload > 0 then crec.z2k_answered = true end
+        local n = desync.dis.payload and #desync.dis.payload or 0
+        local fin = desync.dis.tcp and bitand(desync.dis.tcp.th_flags or 0, TH_FIN) ~= 0
+        if crec.z2k_sil then
+            if fin then
+                crec.z2k_answered = true
+                timer_del(crec.z2k_sil)
+                timers_active = timers_active - 1
+                crec.z2k_sil = nil
+            elseif n > 0 then
+                crec.z2k_in_bytes = (crec.z2k_in_bytes or 0) + n
+                if crec.z2k_in_bytes >= success_bytes(desync) then
+                    crec.z2k_answered = true
+                    timer_del(crec.z2k_sil)
+                    timers_active = timers_active - 1
+                    crec.z2k_sil = nil
+                else
+                    -- Тот же таймер с тем же именем: движок заменяет его и
+                    -- начинает отсчёт заново (мануал, timer_set).
+                    timer_set(crec.z2k_sil, z2k_silence_fire, silence_seconds(desync) * 1000,
+                              true, crec.z2k_sil_data)
+                end
+            end
+        end
         return false
     end
 
@@ -121,7 +156,7 @@ function z2k_fail_silence(desync, crec)
     local name = "z2k_sil_" .. timer_seq
     crec.z2k_sil = name
     timers_active = timers_active + 1
-    timer_set(name, z2k_silence_fire, secs * 1000, true, {
+    crec.z2k_sil_data = {
         crec = crec,
         hrec = hrec,
         strategy = hrec.nstrategy,
@@ -129,6 +164,7 @@ function z2k_fail_silence(desync, crec)
         maxtime = tonumber(desync.arg.time) or 60,
         rst = desync.arg.reset and rst_for(desync) or nil,
         ifout = desync.ifin,
-    })
+    }
+    timer_set(name, z2k_silence_fire, secs * 1000, true, crec.z2k_sil_data)
     return false
 end
