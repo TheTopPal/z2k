@@ -13,6 +13,9 @@ globals = {
     -- потому что движок ищет десинк-функцию по имени в _G, а закрепление и
     -- выбор имени бьёт напрямую юнит-тест.
     "z2k_sni_pick", "z2k_sni_pinned", "z2k_sni_for",
+    -- Детектор «сервер молчит» (files/lua/z2k-silence.lua): движок ищет
+    -- функцию детектора по имени в _G, таймер-функцию — тоже по имени.
+    "z2k_fail_silence", "z2k_silence_fire", "Z2K_SILENCE_MAX",
     -- HTTP-bypass primitives (z2k-http-strats.lua, ALFiX port)
     "z2k_timing_morph",
     "z2k_quic_morph_v2",
@@ -111,6 +114,7 @@ read_globals = {
     -- zapret-auto.lua / nfqws2 core at runtime).
     "tls_mod",
     "tls_client_hello_mod",
+    "dis_reverse",
     "tls_mod_shim",
     "fake_default_tls",
     "http_dissect_req",

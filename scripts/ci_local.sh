@@ -269,7 +269,11 @@ for c in lua5.3 lua5.4 lua; do
     if command -v "$c" >/dev/null 2>&1; then LUA_BIN=$c; break; fi
 done
 if [ -n "$LUA_BIN" ]; then
-    if "$LUA_BIN" tests/test_tcp16_lua.lua; then
+    _lua_rc=0
+    for _h in tests/test_tcp16_lua.lua tests/test_silence_lua.lua; do
+        "$LUA_BIN" "$_h" || _lua_rc=1
+    done
+    if [ "$_lua_rc" = "0" ]; then
         passed "lua unit tests ($LUA_BIN)"
     else
         failed "lua unit tests ($LUA_BIN)"

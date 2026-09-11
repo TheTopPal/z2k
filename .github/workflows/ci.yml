@@ -704,7 +704,9 @@ jobs:
         # skip the lua harness. Use the versioned binary explicitly:
         # `lua` symlink relies on update-alternatives which is not
         # guaranteed on minimal Ubuntu images.
-        run: lua5.3 tests/test_tcp16_lua.lua
+        run: |
+          lua5.3 tests/test_tcp16_lua.lua
+          lua5.3 tests/test_silence_lua.lua
 
   mutation:
     name: Mutation Testing

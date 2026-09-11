@@ -411,6 +411,33 @@ generate_nfqws2_opt_from_strategies() {
     # Только TCP-пулы: у UDP свои пороги udp_in/udp_out.
     local Z2K_CIRCULAR_RESET
     Z2K_CIRCULAR_RESET=$(safe_config_read "Z2K_CIRCULAR_RESET" "${ZAPRET2_DIR:-/opt/zapret2}/config" "1")
+
+    # ДЕТЕКТОР МОЛЧАНИЯ (решение Марка 11.09.2026).
+    #
+    # Все три штатных признака провала — активные: ретрансмиссия исходящего
+    # запроса, входящий RST, DPI-редирект. Самый частый сегодня класс блока
+    # не даёт ни одного: замер на линии владельца 11.09 (x.com, instagram,
+    # discord) — DPI пропускает ClientHello до сервера, сервер подтверждает
+    # ВСЕ байты и замолкает навсегда. Клиенту ретрансмитить нечего, RST не
+    # приходит. Ротация стоит на первой стратегии вечно, человек видит
+    # ERR_TIMED_OUT и пишет «не переключается».
+    #
+    # z2k_fail_silence (files/lua/z2k-silence.lua) ждёт ответа сервера
+    # заданное число секунд и, не дождавшись, считает провал. Штатные признаки
+    # он вызывает первой строкой, поэтому ничего не теряется.
+    #
+    # Проводится только при наличии файла на диске: имя функции резолвится по
+    # _G, и без файла движок падал бы в error() на каждом пакете профиля — тот
+    # же гейт, что у подстановки имени на 16 КБ.
+    local Z2K_SILENCE_DETECT Z2K_SILENCE_SECONDS _circ_silence
+    Z2K_SILENCE_DETECT=$(safe_config_read "Z2K_SILENCE_DETECT" "${ZAPRET2_DIR:-/opt/zapret2}/config" "1")
+    Z2K_SILENCE_SECONDS=$(safe_config_read "Z2K_SILENCE_SECONDS" "${ZAPRET2_DIR:-/opt/zapret2}/config" "5")
+    case "$Z2K_SILENCE_SECONDS" in ''|*[!0-9]*) Z2K_SILENCE_SECONDS=5 ;; esac
+    _circ_silence=""
+    if [ "$Z2K_SILENCE_DETECT" != "0" ] \
+       && [ -f "${ZAPRET2_DIR:-/opt/zapret2}/lua/z2k-silence.lua" ]; then
+        _circ_silence=":failure_detector=z2k_fail_silence:silence=${Z2K_SILENCE_SECONDS}"
+    fi
     ensure_circular_doc_args() {
         local input="$1"
         local out="" token="" opts="" part="" rest=""
@@ -425,7 +452,7 @@ generate_nfqws2_opt_from_strategies() {
                     IFS=':'
                     for part in $opts; do
                         case "$part" in
-                            retrans=*|maxseq=*|inseq=*|reset|no_rst|no_http_redirect) ;;
+                            retrans=*|maxseq=*|inseq=*|reset|no_rst|no_http_redirect|silence=*) ;;
                             failure_detector=*|success_detector=*) ;;
                             *) rest="${rest:+$rest:}$part" ;;
                         esac
@@ -433,6 +460,7 @@ generate_nfqws2_opt_from_strategies() {
                     IFS="$old_ifs"
                     token="--lua-desync=circular:${rest:+$rest:}retrans=3:maxseq=32768:inseq=4096"
                     [ "$Z2K_CIRCULAR_RESET" != "0" ] && token="${token}:reset"
+                    token="${token}${_circ_silence}"
                     ;;
             esac
             out="${out:+$out }$token"
@@ -1904,6 +1932,8 @@ create_official_config() {
     local saved_TG_PROXY_USER_DISABLED="0"
     local saved_ENABLED="1"
     local saved_Z2K_CIRCULAR_RESET="1"
+    local saved_Z2K_SILENCE_DETECT="1"
+    local saved_Z2K_SILENCE_SECONDS="5"
     local saved_Z2K_PADENCAP="1"
     local saved_Z2K_NFQWS2_TEMPLATES="1"
     local saved_Z2K_INJECT_TLS_MODS="0"
@@ -1953,6 +1983,10 @@ create_official_config() {
         # Z2K_CIRCULAR_RESET — RST ретрансмиттеру после фиксации неудачи
         # (см. ensure_circular_doc_args). Умолчание 1, переживает регенерацию.
         saved_Z2K_CIRCULAR_RESET=$(safe_config_read "Z2K_CIRCULAR_RESET" "$config_file" "1")
+        # Детектор молчания и его порог: выключенный человеком детектор не
+        # должен воскресать при каждой пересборке конфига.
+        saved_Z2K_SILENCE_DETECT=$(safe_config_read "Z2K_SILENCE_DETECT" "$config_file" "1")
+        saved_Z2K_SILENCE_SECONDS=$(safe_config_read "Z2K_SILENCE_SECONDS" "$config_file" "5")
         saved_Z2K_PADENCAP=$(safe_config_read "Z2K_PADENCAP" "$config_file" "1")
         saved_Z2K_NFQWS2_TEMPLATES=$(safe_config_read "Z2K_NFQWS2_TEMPLATES" "$config_file" "1")
         saved_Z2K_INJECT_TLS_MODS=$(safe_config_read "Z2K_INJECT_TLS_MODS" "$config_file" "0")
@@ -2317,6 +2351,15 @@ TG_PROXY_USER_DISABLED=${saved_TG_PROXY_USER_DISABLED}
 # circular, документация nfqws2). 1 — включено; 0 — откат, если на линии
 # RST рвёт живые потоки.
 Z2K_CIRCULAR_RESET=${saved_Z2K_CIRCULAR_RESET}
+
+# Детектор «сервер молчит» (files/lua/z2k-silence.lua, решение 11.09.2026).
+# Штатные признаки провала — только активные: ретрансмиссия, входящий RST,
+# DPI-редирект. Самый частый класс блока не даёт ни одного: сервер
+# подтверждает запрос и молчит, ротация стоит вечно. Детектор ждёт ответа
+# Z2K_SILENCE_SECONDS секунд и, не дождавшись, засчитывает провал.
+# 0 — выключить, вернуться к чисто штатным признакам.
+Z2K_SILENCE_DETECT=${saved_Z2K_SILENCE_DETECT}
+Z2K_SILENCE_SECONDS=${saved_Z2K_SILENCE_SECONDS}
 
 # TLS extension auto-injection master switch (default 0, 2026-05-03):
 # выключено по дефолту после field-проверки — auto-injection

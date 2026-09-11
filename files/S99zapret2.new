@@ -737,6 +737,18 @@ LUA_AUTO="$ZAPRET_BASE/lua/zapret-auto.lua"
 # в error на каждом пакете.
 LUA_Z2K_TCP16="$ZAPRET_BASE/lua/z2k-tcp16.lua"
 [ -f "$LUA_Z2K_TCP16" ] && LUAOPT="$LUAOPT --lua-init=@$LUA_Z2K_TCP16"
+# z2k-silence.lua — детектор «сервер молчит» (решение Марка 11.09.2026).
+# Штатные признаки провала все активные: ретрансмиссия, входящий RST,
+# DPI-редирект. Самый частый класс блока не даёт ни одного — сервер
+# подтверждает ClientHello и замолкает, — и ротация стоит вечно. Детектор
+# ждёт ответа таймером и, не дождавшись, считает провал.
+#
+# ПОСЛЕ zapret-auto.lua: зовёт standard_failure_detector, automate_host_record
+# и automate_failure_counter, объявленные там. Файл проверяем на существование:
+# конфиг ссылается на функцию по имени, и её отсутствие роняет движок в error()
+# на каждом пакете профиля.
+LUA_Z2K_SILENCE="$ZAPRET_BASE/lua/z2k-silence.lua"
+[ -f "$LUA_Z2K_SILENCE" ] && LUAOPT="$LUAOPT --lua-init=@$LUA_Z2K_SILENCE"
 # Phase 6: z2k-fooling-ext.lua exports anti-ТСПУ fool functions like
 # z2k_dynamic_ttl, referenced by strategies via `fool=<name>` arg. Must
 # load after zapret-lib.lua (provides apply_fooling's extension point)

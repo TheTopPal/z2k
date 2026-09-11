@@ -539,6 +539,40 @@ check_lua_desync_actions() {
     fi
 }
 
+# ДЕТЕКТОРЫ РОТАЦИИ РЕЗОЛВЯТСЯ ПО ИМЕНИ — И ЭТО ОТКАЗ, А НЕ ДЕГРАДАЦИЯ.
+#
+# circular принимает failure_detector=<имя> / success_detector=<имя>, движок
+# ищет функцию в _G и при её отсутствии валится в error() НА КАЖДОМ ПАКЕТЕ
+# профиля: обход не деградирует, он умирает целиком. Проверок на это не было
+# вовсе — действия десинка валидатор знает, а детекторы шли мимо.
+#
+# Проверяем ровно то, что может быть неверно на конкретном роутере: объявлена
+# ли функция хоть в одном загружаемом lua-файле. Штатные детекторы движка
+# (standard_*) живут в zapret-auto.lua и находятся тем же способом.
+check_lua_detectors() {
+    _opt_text="$1"
+    _lua_dir="${ZAPRET_BASE}/lua"
+    _dets=$(printf '%s\n' "$_opt_text" | tr ' ' '\n' \
+            | grep -oE '(failure|success)_detector=[A-Za-z_][A-Za-z0-9_]*' \
+            | sed 's/.*=//' | sort -u)
+    [ -n "$_dets" ] || { report_ok "Детекторы ротации — штатные"; return 0; }
+
+    _missing=""
+    for _d in $_dets; do
+        if ! grep -rqs -- "function[[:space:]]\+${_d}[[:space:]]*(" "$_lua_dir" 2>/dev/null; then
+            _missing="$_missing $_d"
+        fi
+    done
+
+    if [ -n "$_missing" ]; then
+        for _d in $_missing; do
+            report_fail "Детектор ротации '$_d' не объявлен ни в одном lua-модуле (${_lua_dir}) — движок упадёт на первом же пакете профиля"
+        done
+    else
+        report_ok "Детекторы ротации объявлены в lua-модулях"
+    fi
+}
+
 # ==============================================================================
 # 8. ПРОВЕРКА СТРУКТУРЫ ПРОФИЛЕЙ (--new)
 # ==============================================================================
@@ -811,6 +845,7 @@ main() {
 
         printf "\n%s\n" "--- Валидация lua-desync действий ---"
         check_lua_desync_actions "$NFQWS2_OPT_TEXT"
+        check_lua_detectors "$NFQWS2_OPT_TEXT"
 
         printf "\n%s\n" "--- Структура профилей ---"
         check_profile_structure "$NFQWS2_OPT_TEXT"

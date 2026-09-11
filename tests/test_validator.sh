@@ -313,6 +313,30 @@ assert_eq "незарегистрированный и отсутствующи�
 assert_contains "незарегистрированный блоб: назван по имени" \
     "nowhere_blob" "$NOREG_OUTPUT"
 
+printf "\n--- Validator: детектор ротации без своего lua-модуля ---\n"
+
+# Детектор резолвится движком ПО ИМЕНИ в _G. Конфиг ссылается на него, а файла
+# модуля на роутере нет — nfqws2 падает в error() на каждом пакете профиля, то
+# есть обход умирает целиком. Валидатор обязан поймать это до перезапуска.
+DET_CONFIG="${MOCK_DIR}/config_detector"
+cat > "$DET_CONFIG" <<EOF
+ENABLED=1
+NFQWS2_ENABLE=1
+NFQWS2_OPT="
+--filter-tcp=443 --lua-desync=circular:fails=3:key=rkn_tcp:failure_detector=z2k_fail_silence:silence=5 --lua-desync=fake:payload=tls_client_hello:dir=out:blob=fake_default_tls:strategy=1
+"
+EOF
+rm -f "$MOCK_ZAPRET2/lua/z2k-silence.lua"
+DET_OUTPUT=$(ZAPRET_BASE="$MOCK_ZAPRET2" INIT_SCRIPT="$MOCK_INIT" sh "$VALIDATOR" "$DET_CONFIG" 2>&1)
+DET_RC=$?
+assert_eq "детектор без модуля: код 2" "2" "$DET_RC"
+assert_contains "детектор без модуля: назван по имени" "z2k_fail_silence" "$DET_OUTPUT"
+
+mkdir -p "$MOCK_ZAPRET2/lua"
+printf 'function z2k_fail_silence() end\n' > "$MOCK_ZAPRET2/lua/z2k-silence.lua"
+DET_OK_OUTPUT=$(ZAPRET_BASE="$MOCK_ZAPRET2" INIT_SCRIPT="$MOCK_INIT" sh "$VALIDATOR" "$DET_CONFIG" 2>&1)
+assert_contains "модуль на месте — детектор принят" "Детекторы ротации объявлены" "$DET_OK_OUTPUT"
+
 rm -rf "$MOCK_DIR"
 
 printf "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"

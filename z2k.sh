@@ -1342,6 +1342,17 @@ download_init_script() {
         die "Ошибка загрузки files/lua/z2k-tcp16.lua"
     fi
 
+    # z2k-silence.lua — детектор «сервер молчит». Профили ссылаются на функцию
+    # по имени (failure_detector=z2k_fail_silence), поэтому файл обязан приехать
+    # вместе с конфигом: без него движок падает в error() на каждом пакете.
+    url="${GITHUB_RAW}/files/lua/z2k-silence.lua"
+    output="${lua_dir}/z2k-silence.lua"
+    if z2k_fetch "$url" "$output"; then
+        print_success "Загружено: files/lua/z2k-silence.lua"
+    else
+        die "Ошибка загрузки files/lua/z2k-silence.lua"
+    fi
+
     # Phase 6: anti-ТСПУ fool extensions (z2k_dynamic_ttl and friends).
     # Strategies reference them by name via `fool=z2k_dynamic_ttl`, so the
     # file must be downloaded before strategies load — он резолвится по имени
