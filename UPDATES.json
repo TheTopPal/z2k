@@ -1,8 +1,8 @@
 {
   "schema": 1,
   "branch": "z2k-enhanced",
-  "seq": 86,
-  "current": "p-84.3",
+  "seq": 87,
+  "current": "p-84.4",
   "install_map": {
   "files/000-zapret2.sh": ["/opt/etc/ndm/netfilter.d/000-zapret2.sh"],
   "files/S99zapret2.new": ["/opt/etc/init.d/S99zapret2"],
@@ -52,6 +52,7 @@
   "files/lua/z2k-fooling-ext.lua": ["/opt/zapret2/lua/z2k-fooling-ext.lua"],
   "files/lua/z2k-modern-core.lua": ["/opt/zapret2/lua/z2k-modern-core.lua"],
   "files/lua/z2k-range-rand.lua": ["/opt/zapret2/lua/z2k-range-rand.lua"],
+  "files/lua/z2k-silence.lua": ["/opt/zapret2/lua/z2k-silence.lua"],
   "files/lua/z2k-state-persist.lua": ["/opt/zapret2/lua/z2k-state-persist.lua"],
   "files/lua/z2k-tcp16.lua": ["/opt/zapret2/lua/z2k-tcp16.lua"],
   "files/ndm/90-z2k-tg-redirect.sh": ["/opt/zapret2/ndm/90-z2k-tg-redirect.sh"],
@@ -135,7 +136,7 @@
   },
   "files_sha256": {
   "files/000-zapret2.sh": "b256194eacf0f89b247cb4f4c467d552afe03ebbc4879b79308eed5f914d385d",
-  "files/S99zapret2.new": "2f8fd88c9427173f3caca2895966ee02e76948ed59054a1c0d608764317b7334",
+  "files/S99zapret2.new": "bd00f020836462cea7457883e2aa10df386a3e52edfe4ea55df871f68154d00a",
   "files/etc/z2k-roots.pem": "a6cf5a695274d4f36b401cc62183895af11e68b02417638a070465c77f4caf00",
   "files/etc/z2k-update-pub.pem": "1041720fa0dff53e2babbf547a705c2f43c30bca2c6ca2ddf7144cfe3b470a01",
   "files/fake/quic_1.bin": "f4589c57749f956bb30538197a521d7005f8b0a8723b4707e72405e51ddac50a",
@@ -182,6 +183,7 @@
   "files/lua/z2k-fooling-ext.lua": "4b5efb6672f54dbe4d04440066f06e84d92e43c8534cdfb88d136028e6d8231f",
   "files/lua/z2k-modern-core.lua": "5f4b5312e69447b887d868be74b756d103515eca59765f9155a358bf96da08c7",
   "files/lua/z2k-range-rand.lua": "073c24d9133484b9f2282f1e398b5963eb577b483c1cab8c29cfd6e7bf8acd9a",
+  "files/lua/z2k-silence.lua": "2e53211e4a25bd22ee264c2d39fc4222817f35ba57065230efb16394e7d0e541",
   "files/lua/z2k-state-persist.lua": "364eaecc858c004733eb5d6cf9cdf51ae31854b7dfa1d00caa8198a9ea21adaf",
   "files/lua/z2k-tcp16.lua": "340002edff2035d1882431802cc0920b5d2faf7c733613a1051415b4816fdf9d",
   "files/ndm/90-z2k-tg-redirect.sh": "ca6de843d4fd820a58ad0fc76566b7640011d7f6161d31b5b84720197f0fe19a",
@@ -193,7 +195,7 @@
   "files/ndm/95-z2k-scheduler-watchdog.sh": "d73955d742263bda01ecca1be4b04deb7bba61164a5da2609f3e9977f443ad63",
   "files/z2k-auto-update.sh": "f8b10d95667dc4eb2a64a5a126b42cf4572170cfe23655bfe5effe831a77e9b7",
   "files/z2k-blocked-monitor.sh": "441c5054e002c17aa7223a8694fa943a62579643a03d99b0870a94060e358a2f",
-  "files/z2k-config-validator.sh": "5c382dd3e9009ffac6c3c3640fee10c8af2a9cbcb802636c7e3b62fddcea663b",
+  "files/z2k-config-validator.sh": "5bdbb2585d726b9be16db9382af1e2250efaf6a507a34030babae2abdbe42fdc",
   "files/z2k-detect-watchdog.sh": "8dd2a50edeb1c7001c6dbe654cf0e1f120ccf2e8c9659074003fb0fba532b5bf",
   "files/z2k-diag.sh": "2f4e95976cbc6494be868d59de7f776466b97c6410b63db9c4bbf8d6bc777b94",
   "files/z2k-dns-check.sh": "07a7947acfb552d3bb6d59238c4a5484d19f88a92f3767ef66f7cb46c5ac62bd",
@@ -211,7 +213,7 @@
   "files/z2k-warp.sh": "b77ef2caca56436d6669f001b4c8479bbe8e935c3f4c8ebe964bf047f1c7e2dd",
   "lib/auto_update.sh": "198a97bf02c4f19eb77460df70f05413fed07d2268bdaa9827ff3cc9e8773180",
   "lib/config.sh": "e08589c20e3762e5ec7019abd133efc7479c4f396d5997130d657ee393731c8f",
-  "lib/config_official.sh": "85d41cbace08af0fc1b8e8f082b037a21301421787e4858419b870ede42431f2",
+  "lib/config_official.sh": "dc99652700791404fd1b0e6209e2c64a45b1814373be809b137add21fa14d43a",
   "lib/install.sh": "0984cb30ae5577c7e2168e50d71ce9e49ba53173bba0972d7ffbc07b9b88ef5a",
   "lib/menu.sh": "74ef69e68834a1119e159458be00c2449b4a8b51035cde3b2c70c7bfaee9cdd6",
   "lib/strategies.sh": "68f7e398d9865a088d70fb6f9739c66ab6adcfce4e88c1973b128e3ceb7abbef",
@@ -255,7 +257,7 @@
   "webpanel/www/fonts/FiraSans-600-latin.woff2": "f3cc7b2756c566cf8172bfd269d805c4a1eb953f6b6ce8bf2b2ddf49c5422189",
   "webpanel/www/fonts/FiraSans-700-cyrillic.woff2": "42a8013e902099b563e434d3ccb3bed87ff6d6af8d80fe51ff203f2ac487673b",
   "webpanel/www/fonts/FiraSans-700-latin.woff2": "811e73619cc2909792e8fa134c8d1ed714b898310dd4cc218fc29e40a5dc2890",
-  "webpanel/www/index.html": "085334a734a773a89b02f16fc783b51fd1275c44a926091c3a3d9ae93ff32b82",
+  "webpanel/www/index.html": "3571070c6932dc1c760a4520000dd2b68c0677b45a2341f8894203cf9dae1672",
   "webpanel/www/js/chrome.js": "3e2217758cde6d87f4809aaf65c4aafca582b936d9c53b19abb4adac1479fdef",
   "webpanel/www/js/core/api.js": "eaa798b49c02373a1cffcdee447587f9969194323dd5471ac74a07d4af7b235f",
   "webpanel/www/js/core/auth.js": "7afe5b139737783402f45fb654b9383b24d68779aae93a0f5f1847608252ad8c",
@@ -298,7 +300,7 @@
   "z2k-warpd/builds/z2k-warpd-linux-ppc64": "d8c3653aead033ef697323d7b860210e1c92ad0f8fa39e5a2a2af3919d1c5a64",
   "z2k-warpd/builds/z2k-warpd-linux-riscv64": "161d5a285314d96a79251d02beb4a33fa1d5e6a6483f9829cc624833bc680e6b",
   "z2k-warpd/builds/z2k-warpd-linux-x86": "310fc61fcb765e565e40cb3d4e78929a7ee5cdb8a5926baf4461b2e25c63ae37",
-  "z2k.sh": "4000152aea9747b74e6f0e3ceb9691caff5f4ad4fe401214a12767c9cd299c91"
+  "z2k.sh": "ea0a20c837a0c2a8968c8459ce13cc143f9d1a6a820943c53737c79f8c29d919"
   },
   "history": [
 {"v": "r-1", "type": "reinstall", "ts": "2026-05-04T00:00:00Z", "ref": "vk-whitelist-ext", "desc": "Extend whitelist with VK service/CDN domains (vkuseraudio/vkuservideo/vk-cdn/mvk/vkpay/vkforms/etc) — fixes broken photo comments and other XHR over non-vk.com VK domains", "changed_files": ["lib/config.sh"]},
@@ -537,6 +539,7 @@
 {"v": "r-84", "type": "reinstall", "ts": "2026-09-10T18:46:05Z", "ref": "r-84", "desc": "Обход стал устойчивее: поддельные приветствия теперь копируют настоящее приветствие вашего устройства, а не заготовку, и сайты с большими приветствиями (Chrome, Firefox) больше не зависают. Ротация стратегий переведена на штатные детекторы zapret2, обрыв на 16 КБ вынесен в отдельную проверку с кнопкой на дашборде. Обновление полное: приезжает новый движок.", "changed_files": ["webpanel/www/index.html", "files/S99zapret2.new", "files/lua/z2k-tcp16.lua", "files/z2k-config-validator.sh", "files/z2k-diag.sh", "lib/config_official.sh", "lib/install.sh", "lib/utils.sh", "strats_new2.txt", "webpanel/cgi/actions.sh", "webpanel/cgi/api.sh", "webpanel/www/js/pages/dashboard.js", "z2k.sh", "UPDATES.json"], "steps": ["regen-strategies", "regen-config", "validate-config", "restart-service"], "full_install": true},
 {"v": "r-84.1", "type": "reinstall", "ts": "2026-09-10T20:50:56Z", "ref": "r-84.1", "desc": "Исправлен обход после r-84: поддельные приветствия снова маскируются как раньше, и сайты, которые перестали открываться, открываются. Проверка обрыва на 16 КБ получила свои списки и подробный ход в панели, карточка на дашборде стала компактнее. Обновление полное.", "changed_files": ["webpanel/www/index.html", "files/lua/z2k-tcp16.lua", "files/z2k-diag.sh", "files/z2k-tcp16-probe.sh", "lib/auto_update.sh", "lib/config_official.sh", "lib/install.sh", "lib/utils.sh", "strats_new2.txt", "webpanel/www/js/pages/dashboard.js", "webpanel/www/style.css", "UPDATES.json"], "steps": ["regen-strategies", "regen-config", "validate-config", "restart-service"], "full_install": false},
 {"v": "p-84.2", "type": "patch", "ts": "2026-09-10T21:51:07Z", "ref": "p-84.2", "desc": "Проверка DNS в панели стала честнее: каждый сервер опрашивается по его собственному адресу, а не через резолвер роутера, заворот обычного DNS показывается отдельно, а «умные» DNS-сервисы, подставляющие свои прокси-адреса вместо сайтов, теперь видны. Сводка диагностики показывает снимок этой проверки с его возрастом.", "changed_files": ["webpanel/www/index.html", "files/z2k-diag.sh", "files/z2k-dns-check.sh", "webpanel/www/js/pages/diag.js", "UPDATES.json"], "steps": [], "full_install": false},
-{"v": "p-84.3", "type": "patch", "ts": "2026-09-10T22:12:45Z", "ref": "p-84.3", "desc": "Проверка DNS в панели снова показывает ход по каждому серверу сразу, а не молчит до конца, и стала вдвое быстрее.", "changed_files": ["webpanel/www/index.html", "files/z2k-dns-check.sh", "UPDATES.json"], "steps": [], "full_install": false}
+{"v": "p-84.3", "type": "patch", "ts": "2026-09-10T22:12:45Z", "ref": "p-84.3", "desc": "Проверка DNS в панели снова показывает ход по каждому серверу сразу, а не молчит до конца, и стала вдвое быстрее.", "changed_files": ["webpanel/www/index.html", "files/z2k-dns-check.sh", "UPDATES.json"], "steps": [], "full_install": false},
+{"v": "p-84.4", "type": "patch", "ts": "2026-09-11T07:10:52Z", "ref": "p-84.4", "desc": "Автоподбор стратегий теперь замечает и такую блокировку, при которой сайт не отвечает вовсе: раньше в этом случае подбор замирал на первой стратегии и страница просто висела до таймаута. Появились настройки Z2K_SILENCE_DETECT и Z2K_SILENCE_SECONDS.", "changed_files": ["webpanel/www/index.html", "files/S99zapret2.new", "files/lua/z2k-silence.lua", "files/z2k-config-validator.sh", "lib/config_official.sh", "z2k.sh", "UPDATES.json"], "steps": ["regen-config", "validate-config", "restart-service"], "full_install": false}
   ]
 }
