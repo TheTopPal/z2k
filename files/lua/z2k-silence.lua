@@ -80,7 +80,31 @@ function z2k_silence_fire(name, d)
     -- потому что упавшая таймер-функция удаляется движком навсегда.
     if not hrec.ctstrategy or hrec.ctstrategy < 1 then return end
 
-    if automate_failure_counter(hrec, crec, d.fails, d.maxtime) then
+    -- МОЛЧАНИЯ СЧИТАЮТСЯ ОТДЕЛЬНО ОТ ШТАТНОГО СЧЁТЧИКА.
+    --
+    -- Штатный счётчик провалов хоста обнуляет ЛЮБОЙ успех
+    -- (automate_failure_counter_reset). Для домена, часть соединений которого
+    -- работает, это значит «не ротировать никогда»: замер 11.09.2026 на
+    -- стенде — 8 соединений, 4 молчания, 4 успеха, 0 ротаций, стратегия стоит.
+    -- Так выглядит крупный сайт за CDN: мелочь отдаётся, основной ресурс
+    -- режется, человек видит «полуработает».
+    --
+    -- Успех соседнего соединения не отменяет того, что ЭТОТ путь не работает,
+    -- поэтому свой счётчик гаснет только временем — тем же окном time, что и
+    -- штатный. Штатный при этом тоже кормим: если провалы набежали по обоим
+    -- признакам, ротация случится по тому, кто первый дошёл до порога.
+    local now = os.time()
+    if hrec.z2k_sil_last and now > (hrec.z2k_sil_last + d.maxtime) then
+        hrec.z2k_sil_count = nil
+    end
+    hrec.z2k_sil_count = (hrec.z2k_sil_count or 0) + 1
+    hrec.z2k_sil_last = now
+
+    local rotate = automate_failure_counter(hrec, crec, d.fails, d.maxtime)
+    if not rotate and hrec.z2k_sil_count >= d.fails then rotate = true end
+
+    if rotate then
+        hrec.z2k_sil_count = nil
         hrec.nstrategy = (hrec.nstrategy % hrec.ctstrategy) + 1
         DLOG("z2k_fail_silence: сервер молчит — стратегия " .. hrec.nstrategy)
     end
